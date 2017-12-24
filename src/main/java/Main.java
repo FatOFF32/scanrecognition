@@ -10,7 +10,7 @@ import java.io.File;
 public class Main {
     public static void main(String[] args) {
 
-        File imageFile = new File("D:\\Учеба JAVA\\ДЗ\\img1.jpg");
+        File imageFile = new File("D:\\Учеба JAVA\\Для распознования\\7806474760_780601001_2015-02-10_00000973.pdf");
         ITesseract instance = new Tesseract();  // JNA Interface Mapping
 //        ITesseract instance = new Tesseract1(); // JNA Direct Mapping
 //        File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
