@@ -12,4 +12,13 @@ public class FileInfo {
         this.templateID = templateID;
         this.file = file;
     }
+
+    @Override
+    public String toString() {
+        return "FileInfo{" +
+                "templateID='" + templateID + '\'' +
+                ", file=" + file +
+                ", foundWords=" + foundWords +
+                '}';
+    }
 }

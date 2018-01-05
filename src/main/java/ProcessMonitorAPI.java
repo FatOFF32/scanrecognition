@@ -1,7 +1,16 @@
+import net.sourceforge.tess4j.ITesseract;
+import net.sourceforge.tess4j.Tesseract;
+import net.sourceforge.tess4j.TesseractException;
+
 import java.io.File;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.stream.Stream;
+
+import static java.util.stream.Collectors.toCollection;
 
 public class ProcessMonitorAPI {
 
@@ -26,7 +35,7 @@ public class ProcessMonitorAPI {
         // TODO
     }
 
-    protected class MonitorDirectories extends Thread{
+    protected class MonitorDirectories extends Thread {
 
         // Директории для мониторинга
         HashMap<File, String> directoryForMonitor = new HashMap<>();
@@ -38,7 +47,7 @@ public class ProcessMonitorAPI {
         long curTime = System.currentTimeMillis();
         long updateTime = 60000;
 
-        private void writeDirectoryForMonitor(){
+        private void writeDirectoryForMonitor() {
 
             directoryForMonitor.clear();
 
@@ -53,7 +62,7 @@ public class ProcessMonitorAPI {
 
         }
 
-        private void writeProcessedFile(){
+        private void writeProcessedFile() {
 
             processedFile.clear();
 
@@ -68,7 +77,7 @@ public class ProcessMonitorAPI {
 
         }
 
-        private void writeTemplatesRecognition(){
+        private void writeTemplatesRecognition() {
 
             templatesRecognition.clear();
 
@@ -106,16 +115,16 @@ public class ProcessMonitorAPI {
             writeTemplatesRecognition();
 
             FileInfo curFileToSend;
-            while (!Thread.currentThread().isInterrupted()){
+            while (!Thread.currentThread().isInterrupted()) {
 
                 // Промониторим папки, новые файлы запишем в filesInProcess и filesForProcess, для последующего разбора
                 File[] arrayFiles;
-                for(Map.Entry<File, String> dir : directoryForMonitor.entrySet()){
+                for (Map.Entry<File, String> dir : directoryForMonitor.entrySet()) {
                     if (dir.getKey().isFile()) continue;
 
                     arrayFiles = dir.getKey().listFiles();
-                    for (File file : arrayFiles){
-                        if (!filesInProcess.contains(file) && !processedFile.contains(file)){
+                    for (File file : arrayFiles) {
+                        if (!filesInProcess.contains(file) && !processedFile.contains(file)) {
                             filesInProcess.add(file);
                             try {
                                 filesForProcess.put(new FileInfo(dir.getValue(), file));
@@ -127,22 +136,107 @@ public class ProcessMonitorAPI {
                 }
 
                 // Отправим файлы в 1С, перепишим их из обрабатывающихся в обработанные.
-                while (filesToSend.size() > 0){
+                while (filesToSend.size() > 0) {
                     curFileToSend = filesToSend.poll();
-                    // Тут будет отправка файла в 1С
+                    // Тут будет отправка распознанных данных в 1С (скорее всего РС(путь к файлу, структура распознанная)
                     // todo
 
                     processedFile.add(curFileToSend.file);
                     filesInProcess.remove(curFileToSend.file);
+
+                    // Для теста выведем сообщение в консоль. удалить потом todo
+                    System.out.println(curFileToSend);
                 }
 
-                // Автообновления обработанных файлов (чтобы список обработанных не расширялся до бесконечности)
+                // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности)
                 // А также рабочих директорий.
-                if (curTime + updateTime < System.currentTimeMillis()){
+                if (curTime + updateTime < System.currentTimeMillis()) {
                     writeDirectoryForMonitor();
                     writeProcessedFile();
                     writeTemplatesRecognition();
                     curTime = System.currentTimeMillis();
+                }
+            }
+        }
+    }
+
+    protected class Recognizer extends Thread {
+
+        @Override
+        public void run() {
+
+            FileInfo fileInfo;
+            String result;
+            TemplateRecognition templateRec;
+
+            while (!Thread.currentThread().isInterrupted()) {
+
+                try {
+                    // Дождемся файла
+                    fileInfo = filesForProcess.take();
+
+                    // Распознаем нужную область
+                    templateRec = templatesRecognition.get(fileInfo.templateID);
+                    if (templateRec == null) continue; // возможно тут будет запись в лог файл todo
+
+                    ITesseract instance = new Tesseract();  // JNA Interface Mapping
+                    instance.setLanguage("rus");
+                    try {
+                        result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
+                    } catch (TesseractException e) {
+                        System.err.println(e.getMessage());
+                        continue;
+                    }
+
+                    // Сформируем структуру ответа с найденными словами.
+                    fileInfo.foundWords = new HashMap<>();
+                    for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
+                        String resultCopy = new String(result);
+                        int idx = -1;
+                        for (String st : entry.getValue()) {
+                            idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения https://lucene.apache.org/core/ todo
+                            if (idx == -1) break;
+                            resultCopy = resultCopy.substring(idx + st.length());
+                        }
+
+                        // Если не нашли искомые строки, то вставляем пустое значение.
+                        // В пративном случае получаем значение из текста.
+                        if (idx == -1) fileInfo.foundWords.put(entry.getKey(), "");
+                        else {
+                            // Получим коллекцию из 3 слов, для того, чтобы было удобно парсить дату.
+                            ArrayList<String> resultCol = Stream.of(resultCopy)
+                                    // Указываем, что он должен быть параллельным
+                                    .parallel()
+                                    // Убираем из каждой строки знаки препинания
+                                    .map(line -> line.replaceAll("\\pP", " "))
+                                    // Каждую строку разбивваем на слова и уплощаем результат до стримма слов
+                                    .flatMap(line -> Arrays.stream(line.split(" ")))
+                                    // Обрезаем пробелы
+                                    .map(String::trim)
+                                    // Отбрасываем невалидные слова
+                                    .filter(word -> !"".equals(word))
+                                    // Оставляем только первые 3
+                                    .limit(3)
+                                    // Создаем коллекцию слов
+                                    .collect(toCollection(ArrayList::new));
+
+                            // Если тип дата, то составляем значение из з-х
+                            if (entry.getKey().type == DataTypesConversion.DATE) {
+                                if (resultCol.size() == 3) {
+                                    String pattern;
+                                    if (resultCol.get(1).matches("\\d")) pattern = "dd MM yyyy";
+                                    else pattern = "dd MMMM yyyy";
+                                    Date date = new SimpleDateFormat(pattern).parse(String.join(" ", resultCol));
+                                } else fileInfo.foundWords.put(entry.getKey(), "");
+                            } else if (resultCol.size() > 0) fileInfo.foundWords.put(entry.getKey(), resultCol.get(0));
+                            else fileInfo.foundWords.put(entry.getKey(), "");
+                        }
+                    }
+
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                } catch (ParseException e) {
+                    e.printStackTrace();
                 }
             }
         }

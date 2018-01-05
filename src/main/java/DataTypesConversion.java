@@ -1,6 +1,6 @@
 public enum DataTypesConversion {
     STRING,
-    DATA,
+    DATE,
     DECIMAL;
 
     public static DataTypesConversion getInstanceByName(String name) {
@@ -15,7 +15,7 @@ public enum DataTypesConversion {
                 type = DECIMAL;
                 break;
             case "Дата":
-                type = DATA;
+                type = DATE;
                 break;
         }
         return type;
