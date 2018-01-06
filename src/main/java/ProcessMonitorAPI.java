@@ -224,9 +224,16 @@ public class ProcessMonitorAPI {
                             if (entry.getKey().type == DataTypesConversion.DATE) {
                                 if (resultCol.size() == 3) {
                                     String pattern;
-                                    if (resultCol.get(1).matches("\\d")) pattern = "dd MM yyyy";
+
+                                    // пока работаем с 2 форматами дат...
+                                    if (resultCol.get(1).matches("\\d{2}"))
+                                        pattern = "dd MM yyyy";
                                     else pattern = "dd MMMM yyyy";
+
+                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601
                                     Date date = new SimpleDateFormat(pattern).parse(String.join(" ", resultCol));
+                                    fileInfo.foundWords.put(entry.getKey(), new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ssz" ).format(date));
+
                                 } else fileInfo.foundWords.put(entry.getKey(), "");
                             } else if (resultCol.size() > 0) fileInfo.foundWords.put(entry.getKey(), resultCol.get(0));
                             else fileInfo.foundWords.put(entry.getKey(), "");

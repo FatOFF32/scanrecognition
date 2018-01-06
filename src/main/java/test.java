@@ -2,18 +2,31 @@ import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 
+import org.apache.lucene.document.Document;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.search.FuzzyQuery;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Query;
+
+import javax.print.attribute.standard.NumberUp;
 import java.io.File;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toCollection;
 
 public class test {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws ParseException {
 
         // попробуем распарсить нужную нам информацию...
         List<String> list = new ArrayList<>();
-        String st = "Счет-фактура № 00000973 от 10 Февраля 2015 г.".toLowerCase();
+//        String st = "Счет-фактура № 00000973 от 10 Февраля 2015 г.".toLowerCase();
+        String st = "Счет-фактура № 00000973 от 10.02.2015 г.".toLowerCase();
         // 1. Если просто номер СФ
 /*
         list.add("Счет-фактура".toLowerCase());
@@ -35,7 +48,7 @@ public class test {
 //        System.out.println(Arrays.toString(res));
 
         // Рабочий вариант
-        Collection<String> res = Stream.of(st)
+        ArrayList<String> res = Stream.of(st)
                 // Указываем, что он должен быть параллельным
                 .parallel()
                 // Убираем из каждой строки знаки препинания
@@ -51,7 +64,20 @@ public class test {
                 // Создаем коллекцию слов
                 .collect(toCollection(ArrayList::new));
 
+        String pattern;
+        if (res.get(1).matches("\\d{2}")) // можно и так d+
+            pattern = "dd MM yyyy";
+        else pattern = "dd MMMM yyyy";
+
+        Date date = new SimpleDateFormat(pattern).parse(String.join(" ", res));
+
         System.out.println(String.join(" ", res));
+
+
+        System.out.println(new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ssz" ).format(date));
+
+        Query query = new FuzzyQuery(new Term("Счет-фактура", " бла бла бла Счdет-fфактура бла бла бла"));
+        new IndexSearcher()
 
     }
 
