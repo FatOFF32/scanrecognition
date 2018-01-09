@@ -23,16 +23,32 @@ public class ProcessMonitorAPI {
 
     public ProcessMonitorAPI() {
 
-        // Читаем данные через рест интерфейс из 1С, какие папки мониторить...
+        List<Thread> threads = new ArrayList<>();
+
+        // MonitorDirectories будет:
+        // 1. Получать настройки из 1С через REST
+        // 2. Мониторить папки и записывать информацию о файлах в filesForProcess
+        // 3. Мониторить filesToSend и записывать инфо в 1С через rest.
+        threads.add(new MonitorDirectories());
+
+
+        // Создаем потоки (Их число будет настраиваться в 1С) которые будут ожидать take на filesForProcess,
+        // а когда файл будет обработан, записывать его filesToSend
+        // Пока запускаем треды по кличеству процессоров. В дальнейшем будем получать настройку из 1С todo
+        int proc = Runtime.getRuntime().availableProcessors();
+        for (int i = 0; i < proc; i++) {
+            // Пока запустим напрямую, в дальнейшем переделаем Executors.newFixedThreadPool(proc); todo
+            threads.add(new Recognizer());
+        }
+
+        // Запустим потоки
+        for (Thread thread : threads)
+            thread.start();
+
+        // Тут будет развернут REST сервис, который будет возвращать информацию о текущей работе приложения
+        // А также мониторить потоки, если какой то отвалится, запускать заново
         // TODO
 
-        // Запускаем поток, который мониторит папки и записывает информацию о файлах в fileInProcess
-        // Также этот же поток, будет мониторить ProcessedFile (мб сделать другим потоком) и записывать инфо в 1С через rest.
-        // TODO
-
-        // Запускаем потоки (Их число будет настраиваться в 1С) которые будут ожидать take на fileInProcess,
-        // а когда файл будет обработан, записывать его ProcessedFile
-        // TODO
     }
 
     protected class MonitorDirectories extends Thread {
@@ -58,7 +74,7 @@ public class ProcessMonitorAPI {
             // TODO
 
             // Для теста пока будем использовать одну папку и один шаблон для распознования
-            directoryForMonitor.put(new File("D:\\Учеба JAVA\\Для распознования\\Сканы"), "1111");
+            directoryForMonitor.put(new File("D:\\Java\\Для распознования\\Сканы"), "1111"); //"D:\\Учеба JAVA\\Для распознования\\Сканы"
 
         }
 
@@ -73,7 +89,7 @@ public class ProcessMonitorAPI {
             // TODO
 
             // Для теста
-            processedFile.add(new File("D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf"));
+            processedFile.add(new File("D:\\Java\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf")); // "D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf"
 
         }
 
@@ -152,7 +168,7 @@ public class ProcessMonitorAPI {
                 // А также рабочих директорий.
                 if (curTime + updateTime < System.currentTimeMillis()) {
                     writeDirectoryForMonitor();
-                    writeProcessedFile();
+                    //writeProcessedFile(); т.к. пока нет запроса о обработанный файлах в 1С не выполняем, иначе идёт вечное распознование todo
                     writeTemplatesRecognition();
                     curTime = System.currentTimeMillis();
                 }
@@ -184,9 +200,13 @@ public class ProcessMonitorAPI {
                     try {
                         result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
                     } catch (TesseractException e) {
-                        System.err.println(e.getMessage());
+                        System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
                         continue;
                     }
+
+                    // Для теста, удалить потом todo
+                    System.out.println(result);
+                    result.toLowerCase(); // Почему то не работает todo
 
                     // Сформируем структуру ответа с найденными словами.
                     fileInfo.foundWords = new HashMap<>();
@@ -232,13 +252,16 @@ public class ProcessMonitorAPI {
 
                                     // Распарсим полученную дату, затем переведем её в формат ISO 8601
                                     Date date = new SimpleDateFormat(pattern).parse(String.join(" ", resultCol));
-                                    fileInfo.foundWords.put(entry.getKey(), new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ssz" ).format(date));
+                                    fileInfo.foundWords.put(entry.getKey(), new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ss" ).format(date));
 
                                 } else fileInfo.foundWords.put(entry.getKey(), "");
                             } else if (resultCol.size() > 0) fileInfo.foundWords.put(entry.getKey(), resultCol.get(0));
                             else fileInfo.foundWords.put(entry.getKey(), "");
                         }
                     }
+
+                    // Запишим инфо файл в очередь, для отправки в 1С.
+                    filesToSend.put(fileInfo);
 
                 } catch (InterruptedException e) {
                     e.printStackTrace();
