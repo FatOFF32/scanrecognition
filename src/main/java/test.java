@@ -93,8 +93,8 @@ public class test {
     public static void testSearch() throws IOException, ParseException {
         //Query query = new FuzzyQuery(new Term("Счет-фактура", " бла бла бла Счет-fфактура бла бла бла"));
 
-//        final Document teaserDoc = test.MessageIndexer.createWith("Счет-фактура бла бла бла  бла бла бла", "Счет-фактура бла бла бла Счет-фактура бла бла бла");
-        final Document teaserDoc = test.MessageIndexer.createWith("Привет Хабр!", "Это демонстрация работы простейшего нечёткого поиска");
+        final Document teaserDoc = test.MessageIndexer.createWith("бла бла бла Счет-фактура  бла бла бла", "бла бла бла Счет-фактура бла бла бла");
+//        final Document teaserDoc = test.MessageIndexer.createWith("Привет Хабр!", "Это демонстрация работы простейшего нечёткого поиска");
         final MessageIndexer indexer = new test.MessageIndexer("/tmp/teaser_index");
         indexer.index(true, teaserDoc);
 
@@ -104,8 +104,8 @@ public class test {
 //        System.out.print("Введите запрос:\t");
 //        final String toSearch = reader.nextLine(); // Scans the next token
 
-//        search.fuzzySearch("Счет-фактура", "body", 10);
-        search.fuzzySearch("прривт", "body", 10);
+        search.fuzzySearch("Счет", "title", 10);
+//        search.fuzzySearch("прривт", "title", 10);
     }
 
     public static class TestLucene {
@@ -172,7 +172,7 @@ public class test {
 
             final FieldType textIndexedType = new FieldType();
             textIndexedType.setStored(true);
-            textIndexedType.setIndexOptions(IndexOptions.DOCS);
+            textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS);
             textIndexedType.setTokenized(true);
 
             //index title
