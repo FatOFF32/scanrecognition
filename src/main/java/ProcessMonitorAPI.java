@@ -1,3 +1,7 @@
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.ClientResponse;
+import com.sun.jersey.api.client.WebResource;
+import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -24,6 +28,17 @@ public class ProcessMonitorAPI {
     public ProcessMonitorAPI() {
 
         List<Thread> threads = new ArrayList<>();
+        Client rest1C = Client.create();
+        rest1C.addFilter(new HTTPBasicAuthFilter("Любимов (администратор)", ""));
+        WebResource webResource = rest1C.resource("http://localhost:");
+        ClientResponse response = webResource.accept("application/json")
+                .type("application/json").put(ClientResponse.class, "");
+
+
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("Failed : HTTP error code : "
+                    + response.getStatus());
+        }
 
         // MonitorDirectories будет:
         // 1. Получать настройки из 1С через REST
