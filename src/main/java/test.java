@@ -1,3 +1,9 @@
+import com.sun.jersey.api.client.Client;
+import com.sun.jersey.api.client.ClientResponse;
+import com.sun.jersey.api.client.WebResource;
+import com.sun.jersey.api.client.config.DefaultClientConfig;
+import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
+import com.sun.jersey.api.client.filter.LoggingFilter;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -12,6 +18,12 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.Version;
 import org.apache.lucene.analysis.*;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.node.ArrayNode;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONObject;
+import org.json.simple.parser.JSONParser;
 
 import java.io.File;
 import java.io.IOException;
@@ -31,9 +43,70 @@ public class test {
         //testParseResult();
 
         // Попытка поработать с нечетким поиском
-        test.testSearch();
+        //test.testSearch();
+
+        // test rest сервиса
+        test.testRest();
+
+    }
+
+    public static void testRest(){
+
+        Client rest1C = Client.create(new DefaultClientConfig());
+        rest1C.addFilter(new HTTPBasicAuthFilter("test", "111"));
+//        rest1C.addFilter(new LoggingFilter());
+        WebResource webResource = rest1C.resource("http://localhost/BuhCORP/odata/standard.odata/Catalog_со_ШаблоныАвтораспознавания?$select=Ref_Key,СтрокиПоиска$filter=DeletionMark%20ne%20true");
+        ClientResponse response = webResource.accept("application/json")
+                .type("application/json").get(ClientResponse.class);
 
 
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("Failed : HTTP error code : "
+                    + response.getStatus());
+        }
+//        System.out.println(response.getEntity(String.class));
+        String resut = response.getEntity(String.class);
+
+        // Через джексон
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode rootNode = null;
+        try {
+            rootNode = mapper.readValue(resut, JsonNode.class);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+//        String message = rootNode.get("message").asText(); // get property message
+        JsonNode childNode = rootNode.get("value"); // get object Place
+        for (JsonNode node : childNode){
+            node.get("Ref_Key");
+            JsonNode searchStrings = node.get("СтрокиПоиска");
+            for (JsonNode sStr : searchStrings){
+                node.get("Ref_Key");
+                ArrayNode searchString = (ArrayNode) node.get("СтрокиПоиска");
+            }
+        }
+//        String place = childNode.get("name").asText(); // get property name
+//        System.out.println(message + " " + place); // print "Hi World!"
+
+        // Через симпл
+/*
+        JSONParser parser = new JSONParser();
+        JSONObject parse = null;
+        try {
+            parse = (JSONObject) parser.parse(resut);
+            System.out.println(parse);
+        } catch (org.json.simple.parser.ParseException e) {
+            e.printStackTrace();
+        }
+//        if (parse.get("userId") != null && parse.get("password") != null
+        JSONArray templates = (JSONArray) parse.getOrDefault("value", new JSONArray());
+
+        for (Object temp : templates){
+//            ((JSONObject) temp).getOrDefault()
+
+
+        }
+*/
     }
 
     public static void testParseResult() throws ParseException {
@@ -313,4 +386,18 @@ public class test {
 //    }
 
     }
+
+    public static class TestJSON{
+        String Ref_Key;
+        String LineNumber;
+
+        @Override
+        public String toString() {
+            return "TestJSON{" +
+                    "Ref_Key='" + Ref_Key + '\'' +
+                    ", LineNumber='" + LineNumber + '\'' +
+                    '}';
+        }
+    }
+
 }

@@ -1,12 +1,17 @@
 import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.api.client.WebResource;
+import com.sun.jersey.api.client.config.DefaultClientConfig;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.node.ArrayNode;
 
 import java.io.File;
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -24,21 +29,26 @@ public class ProcessMonitorAPI {
     BlockingQueue<FileInfo> filesToSend = new ArrayBlockingQueue(200);
     // Список шаблонов для распознования
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
+    // Информация для rest сервиса будем получать из 1С todo
+    private String url = "http://localhost/BuhCORP/odata/standard.odata";
+    private String userName = "test";
+    private String pass = "111";
+
 
     public ProcessMonitorAPI() {
 
+        initialize();
+
+    }
+
+    void initialize() {
+
+        // тут будет рест сервер, который ждет пока ему передадут настройки рест сервиса 1С, после этого запускает потоки
+        getSettings1C();
+
+        // Подумать как сделать переинициализацию? Нужно оставновить все труды и поменять настройки todo (а может и не надо)
+
         List<Thread> threads = new ArrayList<>();
-        Client rest1C = Client.create();
-        rest1C.addFilter(new HTTPBasicAuthFilter("Любимов (администратор)", ""));
-        WebResource webResource = rest1C.resource("http://localhost:");
-        ClientResponse response = webResource.accept("application/json")
-                .type("application/json").put(ClientResponse.class, "");
-
-
-        if (response.getStatus() != 200) {
-            throw new RuntimeException("Failed : HTTP error code : "
-                    + response.getStatus());
-        }
 
         // MonitorDirectories будет:
         // 1. Получать настройки из 1С через REST
@@ -66,6 +76,40 @@ public class ProcessMonitorAPI {
 
     }
 
+    void getSettings1C() {
+        // todo
+    }
+
+    JsonNode getResultQuery1C(String query) {
+
+        Client rest1C = Client.create(new DefaultClientConfig());
+        rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
+//        rest1C.addFilter(new LoggingFilter());
+        WebResource webResource = rest1C.resource(url + query);
+        ClientResponse response = webResource.accept("application/json")
+                .type("application/json").get(ClientResponse.class);
+
+
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("Failed : HTTP error code : "
+                    + response.getStatus());
+        }
+
+        String resut = response.getEntity(String.class);
+
+        // Через джексон
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode rootNode = null;
+        try {
+            rootNode = mapper.readValue(resut, JsonNode.class);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return rootNode.get("value");
+
+    }
+
     protected class MonitorDirectories extends Thread {
 
         // Директории для мониторинга
@@ -78,19 +122,33 @@ public class ProcessMonitorAPI {
         long curTime = System.currentTimeMillis();
         long updateTime = 60000;
 
-        private void writeDirectoryForMonitor() {
+        private void writeTemplatesRecognition() {
 
             directoryForMonitor.clear();
+            templatesRecognition.clear();
 
-            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга + ссылку на шаблон для распознования
-            // TODO
+            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования
+            JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
+                    "$filter=DeletionMark%20ne%20true$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры
+                    "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/Порядок%20asc"); // Сортировка
+            for (JsonNode template : templates){
 
-            // Заполняем полученные папки в directoryForMonitor
-            // TODO
+                // Запишем данные для мониторинга директорий
+                directoryForMonitor.put(new File(template.get("КаталогПоискаСканов").asText()), template.get("Ref_Key").asText()); //"D:\\Учеба JAVA\\Для распознования\\Сканы" D:\Java\Для распознования\Сканы
 
-            // Для теста пока будем использовать одну папку и один шаблон для распознования
-            directoryForMonitor.put(new File("D:\\Учеба JAVA\\Для распознования\\Сканы"), "1111"); //"D:\\Учеба JAVA\\Для распознования\\Сканы" D:\Java\Для распознования\Сканы
+                JsonNode searchStrings = template.get("СтрокиПоиска");
+                HashMap<WantedValues, List<String>> wantedWords = new HashMap<>();
+                for (JsonNode sStr : searchStrings){
 
+                    WantedValues wv = new WantedValues(sStr.get("ИмяИскомогоЗначения").asText(),
+                            sStr.get("ТипИскомогоЗначения").asText());
+                    wantedWords.putIfAbsent(wv, new ArrayList<>());
+
+                    List<String> list = wantedWords.get(wv);
+                    list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
+                }
+                templatesRecognition.put(template.get("Ref_Key").asText(), new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords)); //Подумать, а надо ли ИД в TemplateRecognition, он же есть в мапе.
+            }
         }
 
         private void writeProcessedFile() {
@@ -108,7 +166,7 @@ public class ProcessMonitorAPI {
 
         }
 
-        private void writeTemplatesRecognition() {
+        private void TestWriteTemplatesRecognition() { // для теста удалить todo
 
             templatesRecognition.clear();
 
@@ -131,22 +189,24 @@ public class ProcessMonitorAPI {
             wantedWords.put(new WantedValues("Дата", "Дата"), list);
             templatesRecognition.put("1111", new TemplateRecognition("1111", wantedWords)); //Подумать, а надо ли ИД в TemplateRecognition, он же есть в мапе.
 
+            // Для теста пока будем использовать одну папку и один шаблон для распознования удалить todo
+            directoryForMonitor.put(new File("D:\\Учеба JAVA\\Для распознования\\Сканы"), "1111"); //"D:\\Учеба JAVA\\Для распознования\\Сканы" D:\Java\Для распознования\Сканы
+
         }
 
         @Override
         public void run() {
 
-            // Прочитаем какие папки нужно мониторить.
-            writeDirectoryForMonitor();
-
             // Заполним первоначальные данные о отработанных файлах, их обрабатывать не нужно
             writeProcessedFile();
 
-            // Заполним шаблоны для распознования
+            // Заполним папки для мониторинга и шаблоны для распознования
             writeTemplatesRecognition();
 
             FileInfo curFileToSend;
             while (!Thread.currentThread().isInterrupted()) {
+
+//                try {
 
                 // Промониторим папки, новые файлы запишем в filesInProcess и filesForProcess, для последующего разбора
                 File[] arrayFiles;
@@ -182,11 +242,17 @@ public class ProcessMonitorAPI {
                 // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности)
                 // А также рабочих директорий.
                 if (curTime + updateTime < System.currentTimeMillis()) {
-                    writeDirectoryForMonitor();
                     //writeProcessedFile(); т.к. пока нет запроса о обработанный файлах в 1С не выполняем, иначе идёт вечное распознование todo
                     writeTemplatesRecognition();
                     curTime = System.currentTimeMillis();
                 }
+//                } catch (InterruptedException e) {
+//                    // Если выбрасывается исключение InterruptedException,
+//                    // то флаг (isInterrupted()) не переводится в true. Для этого
+//                    // вручную вызывается метод interrupt() у текущего потока.
+//                    Thread.currentThread().interrupt();
+//                    e.printStackTrace();
+//                }
             }
         }
     }
@@ -221,12 +287,11 @@ public class ProcessMonitorAPI {
 
                     // Для теста, удалить потом todo
                     System.out.println(result);
-                    result.toLowerCase(); // Почему то не работает todo
 
                     // Сформируем структуру ответа с найденными словами.
                     fileInfo.foundWords = new HashMap<>();
                     for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
-                        String resultCopy = new String(result);
+                        String resultCopy = result.toLowerCase();
                         int idx = -1;
                         for (String st : entry.getValue()) {
                             idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения https://lucene.apache.org/core/ todo
@@ -267,10 +332,11 @@ public class ProcessMonitorAPI {
 
                                     // Распарсим полученную дату, затем переведем её в формат ISO 8601
                                     Date date = new SimpleDateFormat(pattern).parse(String.join(" ", resultCol));
-                                    fileInfo.foundWords.put(entry.getKey(), new SimpleDateFormat( "yyyy-MM-dd'T'HH:mm:ss" ).format(date));
+                                    fileInfo.foundWords.put(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
 
                                 } else fileInfo.foundWords.put(entry.getKey(), "");
-                            } else if (resultCol.size() > 0) fileInfo.foundWords.put(entry.getKey(), resultCol.get(0));
+                            } else if (resultCol.size() > 0)
+                                fileInfo.foundWords.put(entry.getKey(), resultCol.get(0));
                             else fileInfo.foundWords.put(entry.getKey(), "");
                         }
                     }
@@ -279,6 +345,10 @@ public class ProcessMonitorAPI {
                     filesToSend.put(fileInfo);
 
                 } catch (InterruptedException e) {
+                    // Если выбрасывается исключение InterruptedException,
+                    // то флаг (isInterrupted()) не переводится в true. Для этого
+                    // вручную вызывается метод interrupt() у текущего потока.
+                    Thread.currentThread().interrupt();
                     e.printStackTrace();
                 } catch (ParseException e) {
                     e.printStackTrace();
