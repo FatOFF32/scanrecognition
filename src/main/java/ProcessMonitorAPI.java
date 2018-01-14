@@ -3,12 +3,20 @@ import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.api.client.WebResource;
 import com.sun.jersey.api.client.config.DefaultClientConfig;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
+import com.sun.jersey.api.client.filter.LoggingFilter;
+//import org.glassfish.jersey.server.ResourceConfig;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ArrayNode;
+import org.codehaus.jackson.node.ObjectNode;
+import org.eclipse.jetty.server.Handler;
+import org.eclipse.jetty.server.handler.HandlerList;
+import org.eclipse.jetty.servlet.ServletContextHandler;
+import org.eclipse.jetty.servlet.ServletHolder;
+import org.eclipse.jetty.server.Server;
 
 import java.io.File;
 import java.io.IOException;
@@ -77,7 +85,29 @@ public class ProcessMonitorAPI {
     }
 
     void getSettings1C() {
-        // todo
+
+//        ResourceConfig config = new ResourceConfig();
+//        config.packages("resourceRestServ");
+//        ServletHolder servlet = new ServletHolder(new ServletContainer(config));
+
+        ServletHolder servlet = new ServletHolder(); // new ServletContainer(config));
+
+        // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
+        Server server = new Server(8080);
+        ServletContextHandler context = new ServletContextHandler(server, "/*");
+        context.addServlet(servlet, "/*");
+
+        HandlerList handlers = new HandlerList();
+        handlers.setHandlers(new Handler[]{context});
+
+        server.setHandler(handlers);
+
+        try {
+            server.start();
+            server.join();
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
     }
 
     JsonNode getResultQuery1C(String query) {
@@ -107,6 +137,26 @@ public class ProcessMonitorAPI {
         }
 
         return rootNode.get("value");
+
+    }
+
+    void putObjectTo1C(String query, String jsonObj) {
+
+        Client rest1C = Client.create(new DefaultClientConfig());
+        rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
+        rest1C.addFilter(new LoggingFilter());
+        WebResource webResource = rest1C.resource(url + query);
+
+        ClientResponse response = webResource.accept("application/json")
+                .type("application/json").post(ClientResponse.class, jsonObj);
+
+
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("Failed : HTTP error code : "
+                    + response.getStatus());
+        }
+
+//        String resut = response.getEntity(String.class); // Будем писать в лог todo
 
     }
 
@@ -156,18 +206,22 @@ public class ProcessMonitorAPI {
             processedFile.clear();
 
             // Подключаемся к 1С через rest, получаем данные о отработанных файлах на стороне java, но не подтвержденных на стороне 1С..
-            // TODO
+            JsonNode templates = getResultQuery1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем?$select=ПутьКФайлу");
+            for (JsonNode template : templates){
 
-            // Заполняем полученные файлы в processedFile
-            // TODO
+                // Заполняем полученные файлы в processedFile
+                processedFile.add(new File(template.get("ПутьКФайлу").asText()));
 
-            // Для теста
-            processedFile.add(new File("D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf")); // "D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf" "D:\\Java\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf"
+            }
+
+            // Для теста удалить // TODO
+//            processedFile.add(new File("D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf")); // "D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf" "D:\\Java\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf"
 
         }
 
         private void TestWriteTemplatesRecognition() { // для теста удалить todo
 
+            directoryForMonitor.clear();
             templatesRecognition.clear();
 
             // Подключаемся к 1С через rest, получаем данные о шаблонах распознования...
@@ -229,14 +283,33 @@ public class ProcessMonitorAPI {
                 // Отправим файлы в 1С, перепишим их из обрабатывающихся в обработанные.
                 while (filesToSend.size() > 0) {
                     curFileToSend = filesToSend.poll();
-                    // Тут будет отправка распознанных данных в 1С (скорее всего РС(путь к файлу, структура распознанная)
-                    // todo
+
+                    // Преобразуем полученные данные в JSON и отправим в 1С
+                    String jsonObj = "";
+                    ObjectMapper mapper = new ObjectMapper();
+                    ObjectNode procData = mapper.createObjectNode();
+                    procData.put("ПутьКФайлу", curFileToSend.file.getPath());
+                    procData.put("ШаблонАвтораспознавания_Key", curFileToSend.templateID);
+
+                    // Переделать в JSON в структуру 1с, чтобы удобно было десериализовать объект и подпихнуть в запрос todo
+                    ObjectNode resRecognition = mapper.createObjectNode();
+                    for (Map.Entry<WantedValues, String> wv : curFileToSend.foundWords.entrySet())
+                        resRecognition.put(wv.getKey().name, wv.getValue());
+
+                    try {
+                        procData.put("РаспознанныеДанныеJSON", mapper.writeValueAsString(resRecognition));
+                        jsonObj = mapper.writeValueAsString(procData);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                    putObjectTo1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем", jsonObj);
 
                     processedFile.add(curFileToSend.file);
                     filesInProcess.remove(curFileToSend.file);
 
                     // Для теста выведем сообщение в консоль. удалить потом todo
-                    System.out.println(curFileToSend);
+//                    System.out.println(curFileToSend);
                 }
 
                 // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности)
@@ -286,7 +359,7 @@ public class ProcessMonitorAPI {
                     }
 
                     // Для теста, удалить потом todo
-                    System.out.println(result);
+                    //System.out.println(result);
 
                     // Сформируем структуру ответа с найденными словами.
                     fileInfo.foundWords = new HashMap<>();

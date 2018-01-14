@@ -21,6 +21,7 @@ import org.apache.lucene.analysis.*;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ArrayNode;
+import org.codehaus.jackson.node.ObjectNode;
 import org.json.simple.JSONArray;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -46,7 +47,50 @@ public class test {
         //test.testSearch();
 
         // test rest сервиса
-        test.testRest();
+        //test.testRest();
+
+        // test rest сервиса put
+        test.testRestPut();
+
+    }
+
+    public static void testRestPut(){
+
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode obj = mapper.createObjectNode();
+        ObjectNode objjson = mapper.createObjectNode();
+        objjson.put("Поле1", "Значение 1");
+        objjson.put("Поле2", "Значение 2");
+        obj.put("ПутьКФайлу", "D:\\Учеба JAVA\\Для распознования\\Сканы\\Счет-фактура № 1 от 10 октября 2014 г(бест).pdf");
+//        obj.put("РаспознанныеДанныеJSON", objjson);
+        obj.put("РаспознанныеДанныеJSON", "Какой то json1");
+        obj.put("ШаблонАвтораспознавания_Key", "a1bc9909-f7c5-11e7-b618-001bb1fa66bf");
+//        ArrayNode arr = mapper.createArrayNode();
+//        arr.add(obj);
+//        arr.add(obj1);
+
+        String str = "";
+        try {
+            str = mapper.writeValueAsString(obj);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+//        String str1 = mapper1.writeValueAsString(arr);
+
+        Client rest1C = Client.create(new DefaultClientConfig());
+        rest1C.addFilter(new HTTPBasicAuthFilter("test", "111"));
+        rest1C.addFilter(new LoggingFilter());
+        WebResource webResource = rest1C.resource("http://localhost/BuhCORP/odata/standard.odata/InformationRegister_со_ОбработанныеСканыАвтораспознавателем");
+        ClientResponse response = webResource.accept("application/json")
+                .type("application/json").post(ClientResponse.class, str);
+
+
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("Failed : HTTP error code : "
+                    + response.getStatus());
+        }
+//        System.out.println(response.getEntity(String.class));
+        String resut = response.getEntity(String.class);
 
     }
 
