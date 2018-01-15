@@ -1,3 +1,5 @@
+package root;
+
 public class WantedValues {
 
     String name;

@@ -1,3 +1,5 @@
+package root;
+
 public enum DataTypesConversion {
     STRING,
     DATE,

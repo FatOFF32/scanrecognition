@@ -1,22 +1,24 @@
+package root;
+
 import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.api.client.WebResource;
 import com.sun.jersey.api.client.config.DefaultClientConfig;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import com.sun.jersey.api.client.filter.LoggingFilter;
-//import org.glassfish.jersey.server.ResourceConfig;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.node.ArrayNode;
 import org.codehaus.jackson.node.ObjectNode;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.handler.HandlerList;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
+import org.glassfish.jersey.servlet.ServletContainer;
+import org.glassfish.jersey.server.ResourceConfig;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,10 +40,22 @@ public class ProcessMonitorAPI {
     // Список шаблонов для распознования
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
     // Информация для rest сервиса будем получать из 1С todo
-    private String url = "http://localhost/BuhCORP/odata/standard.odata";
-    private String userName = "test";
-    private String pass = "111";
+    private static String url = "http://localhost/BuhCORP/odata/standard.odata";
+    private static String userName = "test";
+    private static String pass = "111";
+    private static int restPort = 8080; // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
 
+    public static void setUrl1C(String url) {
+        ProcessMonitorAPI.url = url;
+    }
+
+    public static void setUserName1C(String userName) {
+        ProcessMonitorAPI.userName = userName;
+    }
+
+    public static void setPass1C(String pass) {
+        ProcessMonitorAPI.pass = pass;
+    }
 
     public ProcessMonitorAPI() {
 
@@ -51,8 +65,8 @@ public class ProcessMonitorAPI {
 
     void initialize() {
 
-        // тут будет рест сервер, который ждет пока ему передадут настройки рест сервиса 1С, после этого запускает потоки
-        getSettings1C();
+        // Стартуем рест сервер, который будет принимать настройки из 1С
+        startRESTServ();
 
         // Подумать как сделать переинициализацию? Нужно оставновить все труды и поменять настройки todo (а может и не надо)
 
@@ -84,18 +98,17 @@ public class ProcessMonitorAPI {
 
     }
 
-    void getSettings1C() {
+    void startRESTServ() {
 
-//        ResourceConfig config = new ResourceConfig();
-//        config.packages("resourceRestServ");
-//        ServletHolder servlet = new ServletHolder(new ServletContainer(config));
+        ResourceConfig config = new ResourceConfig();
+        config.packages("resourceRestServ");
+        ServletHolder servlet = new ServletHolder(new ServletContainer(config));
 
-        ServletHolder servlet = new ServletHolder(); // new ServletContainer(config));
-
-        // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
-        Server server = new Server(8080);
+        Server server = new Server(restPort);
         ServletContextHandler context = new ServletContextHandler(server, "/*");
         context.addServlet(servlet, "/*");
+//        context.addServlet(ServletContainer.class, "/*");
+//        context.addServlet(new ServletContainer(config),  "/*")
 
         HandlerList handlers = new HandlerList();
         handlers.setHandlers(new Handler[]{context});
@@ -250,6 +263,8 @@ public class ProcessMonitorAPI {
 
         @Override
         public void run() {
+
+            // тут тред будет спать, ждать пока будет заполнены данные для rest интерфейса 1с TODO
 
             // Заполним первоначальные данные о отработанных файлах, их обрабатывать не нужно
             writeProcessedFile();
