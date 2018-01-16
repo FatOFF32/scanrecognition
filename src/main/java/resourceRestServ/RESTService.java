@@ -9,11 +9,11 @@ import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.IOException;
 
-@Path("/recognizer")
+@Path("recognizer")
 public class RESTService {
 
     @POST
-    @Path("/updateAuthData")
+    @Path("updateAuthData")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response updateAuthData(String requestJson) {
@@ -45,7 +45,7 @@ public class RESTService {
     }
 
     @GET
-    @Path("/test")
+    @Path("test")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     public Response updateAuthData() {

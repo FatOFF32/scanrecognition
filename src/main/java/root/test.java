@@ -1,11 +1,13 @@
 package root;
 
+/*
 import com.sun.jersey.api.client.Client;
 import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.api.client.WebResource;
 import com.sun.jersey.api.client.config.DefaultClientConfig;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import com.sun.jersey.api.client.filter.LoggingFilter;
+*/
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -51,9 +53,10 @@ public class test {
         //test.testRest();
 
         // test rest сервиса put
-        test.testRestPut();
+//        test.testRestPut();
 
     }
+/*
 
     public static void testRestPut(){
 
@@ -134,7 +137,6 @@ public class test {
 //        System.out.println(message + " " + place); // print "Hi World!"
 
         // Через симпл
-/*
         JSONParser parser = new JSONParser();
         JSONObject parse = null;
         try {
@@ -151,18 +153,20 @@ public class test {
 
 
         }
-*/
+
+
     }
 
+*/
     public static void testParseResult() throws ParseException {
         List<String> list = new ArrayList<>();
 //        String st = "Счет-фактура № 00000973 от 10 Февраля 2015 г.".toLowerCase();
         String st = "Счет-фактура № 00000973 от 10.02.2015 г.".toLowerCase();
         // 1. Если просто номер СФ
-/*
         list.add("Счет-фактура".toLowerCase());
         list.add("№".toLowerCase());
-*/
+
+
         // 2. Дата СФ
         list.add("Счет-фактура".toLowerCase());
         list.add("№".toLowerCase());
@@ -236,7 +240,8 @@ public class test {
 
         // Нечеткий поиск
 
-        /**
+/*
+*
          * Search using FuzzyQuery.
          *
          * @param toSearch    string to search
@@ -244,7 +249,9 @@ public class test {
          * @param limit       how many results to return
          * @throws IOException
          * @throws ParseException
-         */
+
+*/
+
 
         public void fuzzySearch(final String toSearch, final String searchField, final int limit) throws IOException, ParseException {
             final IndexSearcher indexSearcher = new IndexSearcher(reader);
@@ -273,18 +280,24 @@ public class test {
 
     }
 
-    /**
+/*
+*
      * Default Indexer that we will use in tutorial
      * Be default it will use RussianAnalyzer to analyze text
-     */
+
+
+*/
     public static class MessageIndexer {
         private final String pathToIndexFolder;
 
-        /**
+/*
+*
          * Creates Lucene Document using two strings: body and title
          *
          * @return resulted document
-         */
+
+*/
+
         public static Document createWith(final String titleStr, final String bodyStr) {
             final Document document = new Document();
 
@@ -303,21 +316,27 @@ public class test {
             return document;
         }
 
-        /**
+/*
+*
          * Get instance of MessageIndex providing path where indexes will be stored
          *
          * @param pathToIndexFolder File System path where indexes will be stored. For example /tmp/tutorial_indexes
-         */
+
+*/
+
         public MessageIndexer(final String pathToIndexFolder) {
             this.pathToIndexFolder = pathToIndexFolder;
         }
 
-        /**
+/*
+*
          * Indexing documents using provided Analyzer
          *
          * @param create to decide create new or append to previous one
          * @throws IOException
-         */
+
+*/
+
         public void index(final Boolean create, List<Document> documents, Analyzer analyzer) throws IOException {
             final Directory dir = FSDirectory.open(Paths.get(pathToIndexFolder));
             final IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
@@ -335,35 +354,44 @@ public class test {
             w.close();
         }
 
-        /**
+/*
+*
          * Indexing documents with RussianAnalyzer as analyzer
          *
          * @param create to decide create new or append to previous one
          * @throws IOException
-         */
+
+*/
+
         public void index(final Boolean create, List<Document> documents) throws IOException {
             final Analyzer analyzer = new RussianAnalyzer();
             index(create, documents, analyzer);
         }
 
-        /**
+/*
+*
          * Indexing one document
          *
          * @param create to decide create new or append to previous one
          * @throws IOException
-         */
+
+*/
+
         public void index(final Boolean create, Document document) throws IOException {
             final List<Document> oneDocumentList = new ArrayList<>();
             oneDocumentList.add(document);
             index(create, oneDocumentList);
         }
 
-        /**
+/*
+*
          * Get IndexReader by using pathToIndexFolder
          *
          * @return IndexReader or IOException if any
          * @throws IOException
-         */
+
+*/
+
         public IndexReader readIndex() throws IOException {
             final Directory dir = FSDirectory.open(Paths.get(pathToIndexFolder));
             return DirectoryReader.open(dir);
@@ -396,6 +424,8 @@ public class test {
         tessBaseApi.end();
         return extractedText;
 */
+
+
         }
 
 // Нечеткий поиск, пока оставил

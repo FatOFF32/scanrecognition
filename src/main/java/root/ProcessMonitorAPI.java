@@ -1,11 +1,11 @@
 package root;
 
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.ClientResponse;
-import com.sun.jersey.api.client.WebResource;
-import com.sun.jersey.api.client.config.DefaultClientConfig;
-import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
-import com.sun.jersey.api.client.filter.LoggingFilter;
+//import com.sun.jersey.api.client.Client;
+//import com.sun.jersey.api.client.ClientResponse;
+//import com.sun.jersey.api.client.WebResource;
+//import com.sun.jersey.api.client.config.DefaultClientConfig;
+//import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
+//import com.sun.jersey.api.client.filter.LoggingFilter;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -17,11 +17,15 @@ import org.eclipse.jetty.server.handler.HandlerList;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
+import org.glassfish.jersey.client.ClientResponse;
+//import org.glassfish.jersey.jetty.JettyHttpContainerFactory;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
 
+import javax.ws.rs.core.UriBuilder;
 import java.io.File;
 import java.io.IOException;
+import java.net.URI;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
@@ -104,11 +108,9 @@ public class ProcessMonitorAPI {
         config.packages("resourceRestServ");
         ServletHolder servlet = new ServletHolder(new ServletContainer(config));
 
-        Server server = new Server(restPort);
+        Server server = new Server(12345);
         ServletContextHandler context = new ServletContextHandler(server, "/*");
         context.addServlet(servlet, "/*");
-//        context.addServlet(ServletContainer.class, "/*");
-//        context.addServlet(new ServletContainer(config),  "/*")
 
         HandlerList handlers = new HandlerList();
         handlers.setHandlers(new Handler[]{context});
@@ -125,6 +127,7 @@ public class ProcessMonitorAPI {
 
     JsonNode getResultQuery1C(String query) {
 
+/*
         Client rest1C = Client.create(new DefaultClientConfig());
         rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
 //        rest1C.addFilter(new LoggingFilter());
@@ -150,11 +153,14 @@ public class ProcessMonitorAPI {
         }
 
         return rootNode.get("value");
+*/
+return new ObjectMapper().createObjectNode();
 
     }
 
     void putObjectTo1C(String query, String jsonObj) {
 
+/*
         Client rest1C = Client.create(new DefaultClientConfig());
         rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
         rest1C.addFilter(new LoggingFilter());
@@ -170,6 +176,7 @@ public class ProcessMonitorAPI {
         }
 
 //        String resut = response.getEntity(String.class); // Будем писать в лог todo
+*/
 
     }
 
