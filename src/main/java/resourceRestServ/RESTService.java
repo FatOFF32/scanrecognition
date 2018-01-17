@@ -36,8 +36,8 @@ public class RESTService {
         }
 
         ProcessMonitorAPI.setUrl1C(rootNode.get("URLRESTService1C").asText());
-        ProcessMonitorAPI.setUrl1C(rootNode.get("Пользователь").asText());
-        ProcessMonitorAPI.setUrl1C(rootNode.get("Пароль").asText());
+        ProcessMonitorAPI.setUserName1C(rootNode.get("Пользователь").asText());
+        ProcessMonitorAPI.setPass1C(rootNode.get("Пароль").asText());
 
         return Response.status(Response.Status.OK)
                 .entity(response)

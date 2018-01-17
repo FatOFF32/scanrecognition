@@ -37,6 +37,8 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toCollection;
@@ -137,7 +139,11 @@ public class ProcessMonitorAPI {
 
     JsonNode getResultQuery1C(String query) {
 
-        Client client = ClientBuilder.newClient( new ClientConfig() ); //.register( LoggingFilter.class )
+        ClientConfig config = new ClientConfig();
+        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
+        Client client = ClientBuilder.newClient(config);
+//        Client client = ClientBuilder.newClient(new ClientConfig());
+
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal(userName, pass);
         client.register(feature);
         WebTarget webTarget = client.target(url).path(query);
@@ -181,7 +187,8 @@ public class ProcessMonitorAPI {
     void putObjectTo1C(String query, String jsonObj) {
 
         ClientConfig config = new ClientConfig();
-        config.property(LoggingFeature.LOGGING_FEATURE_VERBOSITY_CLIENT, LoggingFeature.Verbosity.PAYLOAD_ANY);
+//        config.property(LoggingFeature.LOGGING_FEATURE_MAX_ENTITY_SIZE_CLIENT, LoggingFeature.Verbosity.PAYLOAD_ANY);
+        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
 
         Client client = ClientBuilder.newClient(config); //new ClientConfig().register(LoggingFeature.class)
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic(userName, pass);

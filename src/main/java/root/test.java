@@ -25,7 +25,7 @@ import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ArrayNode;
 import org.codehaus.jackson.node.ObjectNode;
-import org.glassfish.hk2.utilities.reflection.Logger;
+//import org.glassfish.hk2.utilities.reflection.Logger;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
 import org.glassfish.jersey.logging.LoggingFeature;
@@ -33,10 +33,7 @@ import org.glassfish.jersey.logging.LoggingFeature;
 //import org.json.simple.JSONObject;
 //import org.json.simple.parser.JSONParser;
 
-import javax.ws.rs.client.Client;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.Invocation;
-import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.io.File;
@@ -46,6 +43,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import static com.sun.org.apache.xml.internal.utils.DOMHelper.createDocument;
@@ -74,6 +72,28 @@ public class test {
     public static void testRest1(){
 
         ClientConfig config = new ClientConfig();
+//        config.property(LoggingFeature.LOGGING_FEATURE_LOGGER_LEVEL_CLIENT, LoggingFeature.Verbosity.); //LoggingFeature.DEFAULT_LOGGER_NAME
+        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
+
+        Client client = ClientBuilder.newClient(config); //new ClientConfig().register(LoggingFeature.class)
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic("testOData", "123456");
+        client.register(feature);
+        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/odata/standard.odata").path("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем");
+
+
+        Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
+        // "{\"ПутьКФайлу\":\"D:\\Java\\Для распознования\\Сканы\\СФ\\7806003433_780601001_2015-02-06_Ссф00233575.pdf\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"{\"Дата\":\"\",\"Номер\":\"\"}\"}"
+//        "{\"ПутьКФайлу\":\"\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"\"}"
+        Response response = invocationBuilder.put(Entity.entity("{\"ПутьКФайлу\":\"D:\\Java\\Для распознования\\Сканы\\СФ\\7806003433_780601001_2015-02-06_Ссф00233575.pdf\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"{\"Дата\":\"\",\"Номер\":\"\"}\"}", MediaType.APPLICATION_JSON));
+
+        if (response.getStatus() != 200) {
+            throw new RuntimeException("Failed : HTTP error code : "
+                    + response.getStatus());
+        }
+
+
+/*
+        ClientConfig config = new ClientConfig();
 //        config.property(LoggingFeature.LOGGING_FEATURE_VERBOSITY_CLIENT, LoggingFeature.Verbosity.PAYLOAD_ANY);
 //        config.register(new LoggingFeature(Logger.getLogger("Test", Level.FINE, LoggingFeature.Verbosity.PAYLOAD_ANY, 8192));
 
@@ -87,6 +107,7 @@ public class test {
         Response response = invocationBuilder.get();
 
         String resut = response.readEntity(String.class);
+*/
     }
 
 /*
