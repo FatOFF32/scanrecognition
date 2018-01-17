@@ -52,10 +52,10 @@ public class ProcessMonitorAPI {
     // Список шаблонов для распознования
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
     // Информация для rest сервиса будем получать из 1С todo
-    private static String url = "http://10.17.1.109/upp_fatov/odata/standard.odata"; //"http://localhost/BuhCORP/odata/standard.odata";
+    private static String url = "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
     private static String userName = "testOData";//"test";
     private static String pass = "123456";//"111";
-    private static int restPort = 5432; // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
+    private static int restPort = 5431; // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
 
     public static void setUrl1C(String url) {
         ProcessMonitorAPI.url = url;
@@ -70,9 +70,7 @@ public class ProcessMonitorAPI {
     }
 
     public ProcessMonitorAPI() {
-
         initialize();
-
     }
 
     void initialize() {

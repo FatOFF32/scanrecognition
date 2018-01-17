@@ -76,15 +76,18 @@ public class test {
         config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
 
         Client client = ClientBuilder.newClient(config); //new ClientConfig().register(LoggingFeature.class)
-        HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic("testOData", "123456");
-        client.register(feature);
-        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/odata/standard.odata").path("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем");
+//        HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic("testOData", "123456");
+//        client.register(feature);
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/odata/standard.odata").path("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем");
+        WebTarget webTarget = client.target("http://localhost:5431/recognizer/updateAuthData");
 
 
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
         // "{\"ПутьКФайлу\":\"D:\\Java\\Для распознования\\Сканы\\СФ\\7806003433_780601001_2015-02-06_Ссф00233575.pdf\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"{\"Дата\":\"\",\"Номер\":\"\"}\"}"
 //        "{\"ПутьКФайлу\":\"\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"\"}"
-        Response response = invocationBuilder.put(Entity.entity("{\"ПутьКФайлу\":\"D:\\Java\\Для распознования\\Сканы\\СФ\\7806003433_780601001_2015-02-06_Ссф00233575.pdf\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"{\"Дата\":\"\",\"Номер\":\"\"}\"}", MediaType.APPLICATION_JSON));
+//        Response response = invocationBuilder.post(Entity.entity("{\"ПутьКФайлу\":\"D:\\Java\\Для распознования\\Сканы\\СФ\\7806003433_780601001_2015-02-06_Ссф00233575.pdf\",\"ШаблонАвтораспознавания_Key\":\"6e4ee607-fb57-11e7-bef1-005056bc20b2\",\"РаспознанныеДанныеJSON\":\"{\"Дата\":\"\",\"Номер\":\"\"}\"}", MediaType.APPLICATION_JSON));
+        Response response = invocationBuilder.post(Entity.entity(
+                "{\"URLRESTService1C\" : \"http://10.17.1.109/upp_fatov/odata/standard.odata\",\"Пользователь\" : \"testOData\", \"Пароль\" : \"111\"}", MediaType.APPLICATION_JSON));
 
         if (response.getStatus() != 200) {
             throw new RuntimeException("Failed : HTTP error code : "
