@@ -25,16 +25,27 @@ import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ArrayNode;
 import org.codehaus.jackson.node.ObjectNode;
+import org.glassfish.hk2.utilities.reflection.Logger;
+import org.glassfish.jersey.client.ClientConfig;
+import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
+import org.glassfish.jersey.logging.LoggingFeature;
 //import org.json.simple.JSONArray;
 //import org.json.simple.JSONObject;
 //import org.json.simple.parser.JSONParser;
 
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Invocation;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.logging.Level;
 import java.util.stream.Stream;
 
 import static com.sun.org.apache.xml.internal.utils.DOMHelper.createDocument;
@@ -52,10 +63,32 @@ public class test {
         // test rest сервиса
         //test.testRest();
 
+        test.testRest1();
+
+
         // test rest сервиса put
 //        test.testRestPut();
 
     }
+
+    public static void testRest1(){
+
+        ClientConfig config = new ClientConfig();
+//        config.property(LoggingFeature.LOGGING_FEATURE_VERBOSITY_CLIENT, LoggingFeature.Verbosity.PAYLOAD_ANY);
+//        config.register(new LoggingFeature(Logger.getLogger("Test", Level.FINE, LoggingFeature.Verbosity.PAYLOAD_ANY, 8192));
+
+        Client client = ClientBuilder.newClient(new ClientConfig().register(LoggingFeature.class)); //.register( LoggingFilter.class )
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal("testOData", "123456");
+        client.register(feature);
+        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/odata/standard.odata").path("/Catalog_со_ШаблоныАвтораспознавания?");
+
+
+        Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
+        Response response = invocationBuilder.get();
+
+        String resut = response.readEntity(String.class);
+    }
+
 /*
 
     public static void testRestPut(){

@@ -17,11 +17,17 @@ import org.eclipse.jetty.server.handler.HandlerList;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
+import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.ClientResponse;
 //import org.glassfish.jersey.jetty.JettyHttpContainerFactory;
+import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
+import org.glassfish.jersey.logging.LoggingFeature;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
 
+import javax.ws.rs.client.*;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import javax.ws.rs.core.UriBuilder;
 import java.io.File;
 import java.io.IOException;
@@ -44,10 +50,10 @@ public class ProcessMonitorAPI {
     // Список шаблонов для распознования
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
     // Информация для rest сервиса будем получать из 1С todo
-    private static String url = "http://localhost/BuhCORP/odata/standard.odata";
-    private static String userName = "test";
-    private static String pass = "111";
-    private static int restPort = 8080; // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
+    private static String url = "http://10.17.1.109/upp_fatov/odata/standard.odata"; //"http://localhost/BuhCORP/odata/standard.odata";
+    private static String userName = "testOData";//"test";
+    private static String pass = "123456";//"111";
+    private static int restPort = 5432; // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
 
     public static void setUrl1C(String url) {
         ProcessMonitorAPI.url = url;
@@ -69,12 +75,12 @@ public class ProcessMonitorAPI {
 
     void initialize() {
 
-        // Стартуем рест сервер, который будет принимать настройки из 1С
-        startRESTServ();
-
-        // Подумать как сделать переинициализацию? Нужно оставновить все труды и поменять настройки todo (а может и не надо)
+        // Подумать как сделать переинициализацию? Нужно оставновить все треды и поменять настройки todo (а может и не надо)
 
         List<Thread> threads = new ArrayList<>();
+
+        // RESTServ, рест сервис, который будет принимать настройки из 1С
+        threads.add(new RESTServ());
 
         // MonitorDirectories будет:
         // 1. Получать настройки из 1С через REST
@@ -102,46 +108,59 @@ public class ProcessMonitorAPI {
 
     }
 
-    void startRESTServ() {
+    protected class RESTServ extends Thread {
 
-        ResourceConfig config = new ResourceConfig();
-        config.packages("resourceRestServ");
-        ServletHolder servlet = new ServletHolder(new ServletContainer(config));
+        @Override
+        public void run() {
+            ResourceConfig config = new ResourceConfig();
+            config.packages("resourceRestServ");
+            ServletHolder servlet = new ServletHolder(new ServletContainer(config));
 
-        Server server = new Server(12345);
-        ServletContextHandler context = new ServletContextHandler(server, "/*");
-        context.addServlet(servlet, "/*");
+            Server server = new Server(restPort);
+            ServletContextHandler context = new ServletContextHandler(server, "/*");
+            context.addServlet(servlet, "/*");
 
-        HandlerList handlers = new HandlerList();
-        handlers.setHandlers(new Handler[]{context});
+            HandlerList handlers = new HandlerList();
+            handlers.setHandlers(new Handler[]{context});
 
-        server.setHandler(handlers);
+            server.setHandler(handlers);
 
-        try {
-            server.start();
-            server.join();
-        } catch (Exception e) {
-            e.printStackTrace(System.err);
+            try {
+                server.start();
+                server.join();
+            } catch (Exception e) {
+                e.printStackTrace(System.err);
+            }
         }
+
     }
 
     JsonNode getResultQuery1C(String query) {
 
-/*
+        Client client = ClientBuilder.newClient( new ClientConfig() ); //.register( LoggingFilter.class )
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal(userName, pass);
+        client.register(feature);
+        WebTarget webTarget = client.target(url).path(query);
+
+
+        Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
+        Response response = invocationBuilder.get();
+
+/*      // Удалить, из старого клиента todo
         Client rest1C = Client.create(new DefaultClientConfig());
         rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
 //        rest1C.addFilter(new LoggingFilter());
         WebResource webResource = rest1C.resource(url + query);
         ClientResponse response = webResource.accept("application/json")
                 .type("application/json").get(ClientResponse.class);
-
+*/
 
         if (response.getStatus() != 200) {
             throw new RuntimeException("Failed : HTTP error code : "
                     + response.getStatus());
         }
 
-        String resut = response.getEntity(String.class);
+        String resut = response.readEntity(String.class);
 
         // Через джексон
         ObjectMapper mapper = new ObjectMapper();
@@ -152,15 +171,28 @@ public class ProcessMonitorAPI {
             e.printStackTrace();
         }
 
+//        String resut = response.readEntity(String.class); // Подумать, следует ли писать в лог файл todo
+
         return rootNode.get("value");
-*/
-return new ObjectMapper().createObjectNode();
+
 
     }
 
     void putObjectTo1C(String query, String jsonObj) {
 
-/*
+        ClientConfig config = new ClientConfig();
+        config.property(LoggingFeature.LOGGING_FEATURE_VERBOSITY_CLIENT, LoggingFeature.Verbosity.PAYLOAD_ANY);
+
+        Client client = ClientBuilder.newClient(config); //new ClientConfig().register(LoggingFeature.class)
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic(userName, pass);
+        client.register(feature);
+        WebTarget webTarget = client.target(url).path(query);
+
+
+        Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
+        Response response = invocationBuilder.post(Entity.entity(jsonObj, MediaType.APPLICATION_JSON));
+
+/*      // Удалить, из старого клиента todo
         Client rest1C = Client.create(new DefaultClientConfig());
         rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
         rest1C.addFilter(new LoggingFilter());
@@ -168,7 +200,7 @@ return new ObjectMapper().createObjectNode();
 
         ClientResponse response = webResource.accept("application/json")
                 .type("application/json").post(ClientResponse.class, jsonObj);
-
+*/
 
         if (response.getStatus() != 200) {
             throw new RuntimeException("Failed : HTTP error code : "
@@ -176,7 +208,6 @@ return new ObjectMapper().createObjectNode();
         }
 
 //        String resut = response.getEntity(String.class); // Будем писать в лог todo
-*/
 
     }
 
