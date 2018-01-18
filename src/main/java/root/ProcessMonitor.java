@@ -1,11 +1,5 @@
 package root;
 
-//import com.sun.jersey.api.client.Client;
-//import com.sun.jersey.api.client.ClientResponse;
-//import com.sun.jersey.api.client.WebResource;
-//import com.sun.jersey.api.client.config.DefaultClientConfig;
-//import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
-//import com.sun.jersey.api.client.filter.LoggingFilter;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -18,100 +12,119 @@ import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
 import org.glassfish.jersey.client.ClientConfig;
-import org.glassfish.jersey.client.ClientResponse;
 //import org.glassfish.jersey.jetty.JettyHttpContainerFactory;
 import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
-import org.glassfish.jersey.logging.LoggingFeature;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
 
 import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
 import java.io.File;
 import java.io.IOException;
-import java.net.URI;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.concurrent.*;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toCollection;
 
-public class ProcessMonitorAPI {
+public class ProcessMonitor {
 
-    // Файлы для обработки
+    // Файлы для обработки Удалить TODO
     BlockingQueue<FileInfo> filesForProcess = new ArrayBlockingQueue(200);
+    // Пул потоков распознавателя, задачи для обработки
+    ThreadPoolExecutor poolExecutor = new ThreadPoolExecutor(4,4,15, TimeUnit.MINUTES, new ArrayBlockingQueue(200));
     // Обработанные файлы, данные по которым отправляем в 1С
     BlockingQueue<FileInfo> filesToSend = new ArrayBlockingQueue(200);
     // Список шаблонов для распознования
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
-    // Информация для rest сервиса будем получать из 1С todo
-    private static String url = "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
-    private static String userName = "testOData";//"test";
-    private static String pass = "123456";//"111";
-    private static int restPort = 5431; // порт будем получать из конфигурационного файла, а записывать в него инфу будем из 1С todo (или может просто передать в качестве аргумента в майн)
+    // Информацию для rest сервиса получаем из 1С todo почистить коментарии с переменными
+    private static volatile String url = ""; // Инициализируем для synchronized // "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
+    private static volatile String userName; // = "testOData";//"test";
+    private static volatile String pass; // = "123456";//"111";
+    private static volatile Integer quantityThreads = 1;
+//    private static volatile WantedValues test = new WantedValues("Дата", "Дата");
+    private static volatile int restPort; // Устанавливаем в параметрах запуска
 
-    public static void setUrl1C(String url) {
-        ProcessMonitorAPI.url = url;
+    public static synchronized void setSettings1C(JsonNode rootNode) {
+
+        // Засинхронимся на url, а затем разбудим поток MonitorDirectories, который спит после первого запуска...
+//        synchronized (test){
+
+            ProcessMonitor.url = rootNode.get("URLRESTService1C").asText();
+            ProcessMonitor.userName = rootNode.get("Пользователь").asText();
+            ProcessMonitor.pass = rootNode.get("Пароль").asText();
+            ProcessMonitor.quantityThreads = rootNode.get("КоличествоПроцессовАвтораспознавания").asInt();
+
+            ProcessMonitor.class.notifyAll();
+//        }
     }
 
-    public static void setUserName1C(String userName) {
-        ProcessMonitorAPI.userName = userName;
-    }
+    public ProcessMonitor(int restPort) {
 
-    public static void setPass1C(String pass) {
-        ProcessMonitorAPI.pass = pass;
-    }
-
-    public ProcessMonitorAPI() {
+        this.restPort = restPort;
         initialize();
+
     }
 
     void initialize() {
 
-        // Подумать как сделать переинициализацию? Нужно оставновить все треды и поменять настройки todo (а может и не надо)
-
-        List<Thread> threads = new ArrayList<>();
+        int curQuantityThreads = quantityThreads;
 
         // RESTServ, рест сервис, который будет принимать настройки из 1С
-        threads.add(new RESTServ());
+        Thread restServ = new RESTServ();
+        restServ.start();
 
         // MonitorDirectories будет:
         // 1. Получать настройки из 1С через REST
-        // 2. Мониторить папки и записывать информацию о файлах в filesForProcess
+        // 2. Мониторить папки и записывать информацию о файлах в filesForProcess todo переписать
         // 3. Мониторить filesToSend и записывать инфо в 1С через rest.
-        threads.add(new MonitorDirectories());
+        Thread monitor = new MonitorDirectories();
+        monitor.start();
 
+        // Мониторим потоки RESTServ и MonitorDirectories, если какой то отвалится, запускаем заново. // todo возможно переделать в поток, чтобы не вешать майн
+        // Также проверяем, если количество процессов изменилось, устанавливаем максимальное количество потоков пула.
+        while (true){
+            // Проверим, менялось ли количество потоков
+            if (quantityThreads != curQuantityThreads){
+                synchronized (quantityThreads){ // Заблокируемся на url
+                    if (quantityThreads < 2){
+                        quantityThreads = 1;
+                        curQuantityThreads = quantityThreads;
+                    } else curQuantityThreads = quantityThreads;
 
-        // Создаем потоки (Их число будет настраиваться в 1С) которые будут ожидать take на filesForProcess,
-        // а когда файл будет обработан, записывать его filesToSend
-        // Пока запускаем треды по кличеству процессоров. В дальнейшем будем получать настройку из 1С todo
-        int proc = Runtime.getRuntime().availableProcessors();
-        for (int i = 0; i < proc; i++) {
-            // Пока запустим напрямую, в дальнейшем переделаем Executors.newFixedThreadPool(proc); todo
-            threads.add(new Recognizer());
+                    poolExecutor.setMaximumPoolSize(quantityThreads);
+                }
+            }
+
+            // Проверим, живы ли наши потоки, если нет, пересоздадим и запустим их.
+            if (!restServ.isAlive()){
+                restServ = new RESTServ();
+                restServ.start();
+            }
+            if (!monitor.isAlive()){
+                monitor = new MonitorDirectories();
+                monitor.start();
+            }
+
+            // Поспим 10 секунд, затем опять проверим настройки и работоспособность потоков
+            try {
+                Thread.sleep(10000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
-
-        // Запустим потоки
-        for (Thread thread : threads)
-            thread.start();
-
-        // Тут будет развернут REST сервис, который будет возвращать информацию о текущей работе приложения
-        // А также мониторить потоки, если какой то отвалится, запускать заново
-        // TODO
-
     }
 
     protected class RESTServ extends Thread {
 
         @Override
         public void run() {
+
+            // Переделать под протокол SSL todo
+
             ResourceConfig config = new ResourceConfig();
             config.packages("resourceRestServ");
             ServletHolder servlet = new ServletHolder(new ServletContainer(config));
@@ -138,9 +151,8 @@ public class ProcessMonitorAPI {
     JsonNode getResultQuery1C(String query) {
 
         ClientConfig config = new ClientConfig();
-        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
+//        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
         Client client = ClientBuilder.newClient(config);
-//        Client client = ClientBuilder.newClient(new ClientConfig());
 
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal(userName, pass);
         client.register(feature);
@@ -160,10 +172,12 @@ public class ProcessMonitorAPI {
 */
 
         if (response.getStatus() != 200) {
-            throw new RuntimeException("Failed : HTTP error code : "
-                    + response.getStatus());
+            // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
+//            throw new RuntimeException("Failed : HTTP error code : "
+//                    + response.getStatus());
         }
 
+        // Результат будем писать в лог, на самом низком уровне логирования todo
         String resut = response.readEntity(String.class);
 
         // Через джексон
@@ -175,8 +189,6 @@ public class ProcessMonitorAPI {
             e.printStackTrace();
         }
 
-//        String resut = response.readEntity(String.class); // Подумать, следует ли писать в лог файл todo
-
         return rootNode.get("value");
 
 
@@ -185,10 +197,9 @@ public class ProcessMonitorAPI {
     void putObjectTo1C(String query, String jsonObj) {
 
         ClientConfig config = new ClientConfig();
-//        config.property(LoggingFeature.LOGGING_FEATURE_MAX_ENTITY_SIZE_CLIENT, LoggingFeature.Verbosity.PAYLOAD_ANY);
-        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
+//        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
 
-        Client client = ClientBuilder.newClient(config); //new ClientConfig().register(LoggingFeature.class)
+        Client client = ClientBuilder.newClient(config);
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic(userName, pass);
         client.register(feature);
         WebTarget webTarget = client.target(url).path(query);
@@ -208,8 +219,9 @@ public class ProcessMonitorAPI {
 */
 
         if (response.getStatus() != 200) {
-            throw new RuntimeException("Failed : HTTP error code : "
-                    + response.getStatus());
+            // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
+//            throw new RuntimeException("Failed : HTTP error code : "
+//                    + response.getStatus());
         }
 
 //        String resut = response.getEntity(String.class); // Будем писать в лог todo
@@ -307,7 +319,16 @@ public class ProcessMonitorAPI {
         @Override
         public void run() {
 
-            // тут тред будет спать, ждать пока будет заполнены данные для rest интерфейса 1с TODO
+            // Поспим, пока не прилетит настройка из 1С. Будет возникать во время первого запуска автораспознавателя
+            while (url.equals("")){
+                synchronized (ProcessMonitor.class){ //class, т.к переменные статические
+                    try {
+                        ProcessMonitor.class.wait();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+            }
 
             // Заполним первоначальные данные о отработанных файлах, их обрабатывать не нужно
             writeProcessedFile();
@@ -320,7 +341,7 @@ public class ProcessMonitorAPI {
 
 //                try {
 
-                // Промониторим папки, новые файлы запишем в filesInProcess и filesForProcess, для последующего разбора
+                // Промониторим папки, новые файлы запишем в filesInProcess и filesForProcess, для последующего разбора todo
                 File[] arrayFiles;
                 for (Map.Entry<File, String> dir : directoryForMonitor.entrySet()) {
                     if (dir.getKey().isFile()) continue;
@@ -329,11 +350,16 @@ public class ProcessMonitorAPI {
                     for (File file : arrayFiles) {
                         if (!filesInProcess.contains(file) && !processedFile.contains(file)) {
                             filesInProcess.add(file);
-                            try {
-                                filesForProcess.put(new FileInfo(dir.getValue(), file));
-                            } catch (InterruptedException e) {
-                                e.printStackTrace();
-                            }
+
+                            poolExecutor.submit(new Recognizer(new FileInfo(dir.getValue(), file)));
+
+//                            try {
+//                                // Переделаем на пул, удалить todo
+////                                filesForProcess.put(new FileInfo(dir.getValue(), file));
+//                                //futures.put(new Recognizer(new FileInfo(dir.getValue(), file))); // не работает так todo
+//                            } catch (InterruptedException e) {
+//                                e.printStackTrace();
+//                            }
                         }
                     }
                 }
@@ -373,7 +399,7 @@ public class ProcessMonitorAPI {
                 // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности)
                 // А также рабочих директорий.
                 if (curTime + updateTime < System.currentTimeMillis()) {
-                    //writeProcessedFile(); т.к. пока нет запроса о обработанный файлах в 1С не выполняем, иначе идёт вечное распознование todo
+                    writeProcessedFile(); //т.к. пока нет запроса о обработанный файлах в 1С не выполняем, иначе идёт вечное распознование todo
                     writeTemplatesRecognition();
                     curTime = System.currentTimeMillis();
                 }
@@ -388,24 +414,32 @@ public class ProcessMonitorAPI {
         }
     }
 
-    protected class Recognizer extends Thread {
+    protected class Recognizer implements Runnable {
+//    protected class Recognizer extends Thread {
+        private final FileInfo fileInfo;
+
+        public Recognizer(FileInfo fileInfo) {
+            this.fileInfo = fileInfo;
+        }
 
         @Override
         public void run() {
 
-            FileInfo fileInfo;
+            //FileInfo fileInfo; todo delete
             String result;
             TemplateRecognition templateRec;
 
-            while (!Thread.currentThread().isInterrupted()) {
+//            while (!Thread.currentThread().isInterrupted()) { // todo delete
+            System.out.println(Thread.currentThread()); // TODO удалить
 
                 try {
                     // Дождемся файла
-                    fileInfo = filesForProcess.take();
+                    //fileInfo = filesForProcess.take(); todo delete
 
                     // Распознаем нужную область
                     templateRec = templatesRecognition.get(fileInfo.templateID);
-                    if (templateRec == null) continue; // возможно тут будет запись в лог файл todo
+//                    if (templateRec == null) continue; // возможно тут будет запись в лог файл todo delete
+                    if (templateRec == null) return; // возможно тут будет запись в лог файл todo
 
                     ITesseract instance = new Tesseract();  // JNA Interface Mapping
                     instance.setLanguage("rus");
@@ -413,7 +447,8 @@ public class ProcessMonitorAPI {
                         result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
                     } catch (TesseractException e) {
                         System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
-                        continue;
+//                        continue; todo delete
+                        return;
                     }
 
                     // Для теста, удалить потом todo
@@ -484,7 +519,7 @@ public class ProcessMonitorAPI {
                 } catch (ParseException e) {
                     e.printStackTrace();
                 }
-            }
+//            }
         }
     }
 }
