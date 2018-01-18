@@ -32,10 +32,8 @@ import static java.util.stream.Collectors.toCollection;
 
 public class ProcessMonitor {
 
-    // Файлы для обработки Удалить TODO
-    BlockingQueue<FileInfo> filesForProcess = new ArrayBlockingQueue(200);
     // Пул потоков распознавателя, задачи для обработки
-    ThreadPoolExecutor poolExecutor = new ThreadPoolExecutor(4,4,15, TimeUnit.MINUTES, new ArrayBlockingQueue(200));
+    ThreadPoolExecutor poolExecutor = new ThreadPoolExecutor(1,1,15, TimeUnit.MINUTES, new ArrayBlockingQueue(200));
     // Обработанные файлы, данные по которым отправляем в 1С
     BlockingQueue<FileInfo> filesToSend = new ArrayBlockingQueue(200);
     // Список шаблонов для распознования
@@ -45,13 +43,9 @@ public class ProcessMonitor {
     private static volatile String userName; // = "testOData";//"test";
     private static volatile String pass; // = "123456";//"111";
     private static volatile Integer quantityThreads = 1;
-//    private static volatile WantedValues test = new WantedValues("Дата", "Дата");
     private static volatile int restPort; // Устанавливаем в параметрах запуска
 
     public static synchronized void setSettings1C(JsonNode rootNode) {
-
-        // Засинхронимся на url, а затем разбудим поток MonitorDirectories, который спит после первого запуска...
-//        synchronized (test){
 
             ProcessMonitor.url = rootNode.get("URLRESTService1C").asText();
             ProcessMonitor.userName = rootNode.get("Пользователь").asText();
@@ -59,7 +53,6 @@ public class ProcessMonitor {
             ProcessMonitor.quantityThreads = rootNode.get("КоличествоПроцессовАвтораспознавания").asInt();
 
             ProcessMonitor.class.notifyAll();
-//        }
     }
 
     public ProcessMonitor(int restPort) {
@@ -79,7 +72,7 @@ public class ProcessMonitor {
 
         // MonitorDirectories будет:
         // 1. Получать настройки из 1С через REST
-        // 2. Мониторить папки и записывать информацию о файлах в filesForProcess todo переписать
+        // 2. Мониторить папки и запускать задачи в poolExecutor
         // 3. Мониторить filesToSend и записывать инфо в 1С через rest.
         Thread monitor = new MonitorDirectories();
         monitor.start();
@@ -95,6 +88,7 @@ public class ProcessMonitor {
                         curQuantityThreads = quantityThreads;
                     } else curQuantityThreads = quantityThreads;
 
+                    poolExecutor.setCorePoolSize(quantityThreads);
                     poolExecutor.setMaximumPoolSize(quantityThreads);
                 }
             }
@@ -162,15 +156,6 @@ public class ProcessMonitor {
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
         Response response = invocationBuilder.get();
 
-/*      // Удалить, из старого клиента todo
-        Client rest1C = Client.create(new DefaultClientConfig());
-        rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
-//        rest1C.addFilter(new LoggingFilter());
-        WebResource webResource = rest1C.resource(url + query);
-        ClientResponse response = webResource.accept("application/json")
-                .type("application/json").get(ClientResponse.class);
-*/
-
         if (response.getStatus() != 200) {
             // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
 //            throw new RuntimeException("Failed : HTTP error code : "
@@ -208,16 +193,6 @@ public class ProcessMonitor {
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
         Response response = invocationBuilder.post(Entity.entity(jsonObj, MediaType.APPLICATION_JSON));
 
-/*      // Удалить, из старого клиента todo
-        Client rest1C = Client.create(new DefaultClientConfig());
-        rest1C.addFilter(new HTTPBasicAuthFilter(userName, pass));
-        rest1C.addFilter(new LoggingFilter());
-        WebResource webResource = rest1C.resource(url + query);
-
-        ClientResponse response = webResource.accept("application/json")
-                .type("application/json").post(ClientResponse.class, jsonObj);
-*/
-
         if (response.getStatus() != 200) {
             // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
 //            throw new RuntimeException("Failed : HTTP error code : "
@@ -252,7 +227,7 @@ public class ProcessMonitor {
             for (JsonNode template : templates){
 
                 // Запишем данные для мониторинга директорий
-                directoryForMonitor.put(new File(template.get("КаталогПоискаСканов").asText()), template.get("Ref_Key").asText()); //"D:\\Учеба JAVA\\Для распознования\\Сканы" D:\Java\Для распознования\Сканы
+                directoryForMonitor.put(new File(template.get("КаталогПоискаСканов").asText()), template.get("Ref_Key").asText());
 
                 JsonNode searchStrings = template.get("СтрокиПоиска");
                 HashMap<WantedValues, List<String>> wantedWords = new HashMap<>();
@@ -265,7 +240,7 @@ public class ProcessMonitor {
                     List<String> list = wantedWords.get(wv);
                     list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
                 }
-                templatesRecognition.put(template.get("Ref_Key").asText(), new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords)); //Подумать, а надо ли ИД в TemplateRecognition, он же есть в мапе.
+                templatesRecognition.put(template.get("Ref_Key").asText(), new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords));
             }
         }
 
@@ -281,10 +256,6 @@ public class ProcessMonitor {
                 processedFile.add(new File(template.get("ПутьКФайлу").asText()));
 
             }
-
-            // Для теста удалить // TODO
-//            processedFile.add(new File("D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf")); // "D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf" "D:\\Java\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf"
-
         }
 
         private void TestWriteTemplatesRecognition() { // для теста удалить todo
@@ -314,6 +285,9 @@ public class ProcessMonitor {
             // Для теста пока будем использовать одну папку и один шаблон для распознования удалить todo
             directoryForMonitor.put(new File("D:\\Учеба JAVA\\Для распознования\\Сканы"), "1111"); //"D:\\Учеба JAVA\\Для распознования\\Сканы" D:\Java\Для распознования\Сканы
 
+            // Для теста удалить // TODO
+//            processedFile.add(new File("D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf")); // "D:\\Учеба JAVA\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf" "D:\\Java\\Для распознования\\Сканы\\7806474760_780601001_2015-02-10_00000973.pdf"
+
         }
 
         @Override
@@ -341,7 +315,7 @@ public class ProcessMonitor {
 
 //                try {
 
-                // Промониторим папки, новые файлы запишем в filesInProcess и filesForProcess, для последующего разбора todo
+                // Промониторим папки, новые файлы запишем в filesInProcess и добавим в пул задач (poolExecutor), для последующего разбора
                 File[] arrayFiles;
                 for (Map.Entry<File, String> dir : directoryForMonitor.entrySet()) {
                     if (dir.getKey().isFile()) continue;
@@ -352,14 +326,6 @@ public class ProcessMonitor {
                             filesInProcess.add(file);
 
                             poolExecutor.submit(new Recognizer(new FileInfo(dir.getValue(), file)));
-
-//                            try {
-//                                // Переделаем на пул, удалить todo
-////                                filesForProcess.put(new FileInfo(dir.getValue(), file));
-//                                //futures.put(new Recognizer(new FileInfo(dir.getValue(), file))); // не работает так todo
-//                            } catch (InterruptedException e) {
-//                                e.printStackTrace();
-//                            }
                         }
                     }
                 }
@@ -375,7 +341,6 @@ public class ProcessMonitor {
                     procData.put("ПутьКФайлу", curFileToSend.file.getPath());
                     procData.put("ШаблонАвтораспознавания_Key", curFileToSend.templateID);
 
-                    // Переделать в JSON в структуру 1с, чтобы удобно было десериализовать объект и подпихнуть в запрос todo
                     ObjectNode resRecognition = mapper.createObjectNode();
                     for (Map.Entry<WantedValues, String> wv : curFileToSend.foundWords.entrySet())
                         resRecognition.put(wv.getKey().name, wv.getValue());
@@ -391,15 +356,12 @@ public class ProcessMonitor {
 
                     processedFile.add(curFileToSend.file);
                     filesInProcess.remove(curFileToSend.file);
-
-                    // Для теста выведем сообщение в консоль. удалить потом todo
-//                    System.out.println(curFileToSend);
                 }
 
-                // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности)
-                // А также рабочих директорий.
+                // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности),
+                // а также рабочих директорий.
                 if (curTime + updateTime < System.currentTimeMillis()) {
-                    writeProcessedFile(); //т.к. пока нет запроса о обработанный файлах в 1С не выполняем, иначе идёт вечное распознование todo
+                    writeProcessedFile();
                     writeTemplatesRecognition();
                     curTime = System.currentTimeMillis();
                 }
@@ -415,7 +377,7 @@ public class ProcessMonitor {
     }
 
     protected class Recognizer implements Runnable {
-//    protected class Recognizer extends Thread {
+
         private final FileInfo fileInfo;
 
         public Recognizer(FileInfo fileInfo) {
@@ -425,20 +387,15 @@ public class ProcessMonitor {
         @Override
         public void run() {
 
-            //FileInfo fileInfo; todo delete
             String result;
             TemplateRecognition templateRec;
 
-//            while (!Thread.currentThread().isInterrupted()) { // todo delete
-            System.out.println(Thread.currentThread()); // TODO удалить
+            System.out.println(Thread.currentThread()); // TODO для теста удалить
 
                 try {
-                    // Дождемся файла
-                    //fileInfo = filesForProcess.take(); todo delete
 
                     // Распознаем нужную область
                     templateRec = templatesRecognition.get(fileInfo.templateID);
-//                    if (templateRec == null) continue; // возможно тут будет запись в лог файл todo delete
                     if (templateRec == null) return; // возможно тут будет запись в лог файл todo
 
                     ITesseract instance = new Tesseract();  // JNA Interface Mapping
@@ -447,12 +404,8 @@ public class ProcessMonitor {
                         result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
                     } catch (TesseractException e) {
                         System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
-//                        continue; todo delete
                         return;
                     }
-
-                    // Для теста, удалить потом todo
-                    //System.out.println(result);
 
                     // Сформируем структуру ответа с найденными словами.
                     fileInfo.foundWords = new HashMap<>();
