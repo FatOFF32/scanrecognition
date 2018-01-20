@@ -150,13 +150,15 @@ public class ProcessMonitor {
 
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal(userName, pass);
         client.register(feature);
-        WebTarget webTarget = client.target(url).path(query);
+//        WebTarget webTarget = client.target(url).path(query);
+        WebTarget webTarget = client.target(url + query);
 
 
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
         Response response = invocationBuilder.get();
 
         if (response.getStatus() != 200) {
+            System.out.println("Failed : HTTP error code : " + response.getStatus());
             // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
 //            throw new RuntimeException("Failed : HTTP error code : "
 //                    + response.getStatus());
@@ -187,7 +189,8 @@ public class ProcessMonitor {
         Client client = ClientBuilder.newClient(config);
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic(userName, pass);
         client.register(feature);
-        WebTarget webTarget = client.target(url).path(query);
+//        WebTarget webTarget = client.target(url).path(query);
+        WebTarget webTarget = client.target(url + query);
 
 
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
@@ -223,7 +226,9 @@ public class ProcessMonitor {
             // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования
             JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
                     "$filter=DeletionMark%20ne%20true$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры
-                    "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/Порядок%20asc"); // Сортировка
+                    "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
+            if (templates == null)
+                return;
             for (JsonNode template : templates){
 
                 // Запишем данные для мониторинга директорий
@@ -250,6 +255,9 @@ public class ProcessMonitor {
 
             // Подключаемся к 1С через rest, получаем данные о отработанных файлах на стороне java, но не подтвержденных на стороне 1С..
             JsonNode templates = getResultQuery1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем?$select=ПутьКФайлу");
+            if(templates == null)
+                return;
+
             for (JsonNode template : templates){
 
                 // Заполняем полученные файлы в processedFile
