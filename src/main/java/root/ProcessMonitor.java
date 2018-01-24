@@ -3,6 +3,7 @@ package root;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
+import net.sourceforge.tess4j.util.ImageIOHelper;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ObjectNode;
@@ -17,14 +18,17 @@ import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
 
+import javax.imageio.IIOImage;
 import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.List;
 import java.util.concurrent.*;
 import java.util.stream.Stream;
 
@@ -409,8 +413,19 @@ public class ProcessMonitor {
                     ITesseract instance = new Tesseract();  // JNA Interface Mapping
                     instance.setLanguage("rus");
                     try {
-                        result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
+                        // Будет так:
+                        List<IIOImage> iioImages = ImageIOHelper.getIIOImageList(fileInfo.file);
+                        if (iioImages.size() == 0)
+                            return; // Тут будет запись в лог файл TODO
+                        //iioImages.set(0).getRenderedImage(). //Поиграться, рассчитать координаты, создать зону для распознования TODO
+                        result = instance.doOCR(iioImages.subList(0,0), new Rectangle(iioImages.get(0).getRenderedImage().getWidth(), iioImages.get(0).getRenderedImage().getHeight() / 2)); // Сюда передаем 0 элементы, и зону для распознования todo
+
+//                        result = instance.doOCR(iioImages, templateRec.areaRecognition); // Пока так!) todo
+//                        result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
                     } catch (TesseractException e) {
+                        System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
+                        return;
+                    } catch (IOException e) {
                         System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
                         return;
                     }
