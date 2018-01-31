@@ -17,6 +17,8 @@ import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.imageio.IIOImage;
 import javax.ws.rs.client.*;
@@ -48,6 +50,8 @@ public class ProcessMonitor {
     private static volatile String pass; // = "123456";//"111";
     private static volatile Integer quantityThreads = 1;
     private static volatile int restPort; // Устанавливаем в параметрах запуска
+    // logger
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProcessMonitor.class);
 
     public static synchronized void setSettings1C(JsonNode rootNode) {
 
@@ -86,7 +90,7 @@ public class ProcessMonitor {
         while (true){
             // Проверим, менялось ли количество потоков
             if (quantityThreads != curQuantityThreads){
-                synchronized (quantityThreads){ // Заблокируемся на url
+                synchronized (ProcessMonitor.class){ // Заблокируемся
                     if (quantityThreads < 2){
                         quantityThreads = 1;
                         curQuantityThreads = quantityThreads;
@@ -111,7 +115,8 @@ public class ProcessMonitor {
             try {
                 Thread.sleep(10000);
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                if (LOGGER.isErrorEnabled())
+                    LOGGER.error("Process monitor was interrupt", e);
             }
         }
     }
@@ -140,10 +145,12 @@ public class ProcessMonitor {
                 server.start();
                 server.join();
             } catch (Exception e) {
-                e.printStackTrace(System.err);
+                if (LOGGER.isErrorEnabled())
+                    LOGGER.error("Server error", e);
+            } finally {
+                server.destroy();
             }
         }
-
     }
 
     JsonNode getResultQuery1C(String query) {
@@ -154,7 +161,7 @@ public class ProcessMonitor {
 
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal(userName, pass);
         client.register(feature);
-//        WebTarget webTarget = client.target(url).path(query);
+//        WebTarget webTarget = client.target(url).path(query); // Почему то так не всегда работает.
         WebTarget webTarget = client.target(url + query);
 
 
@@ -162,26 +169,28 @@ public class ProcessMonitor {
         Response response = invocationBuilder.get();
 
         if (response.getStatus() != 200) {
-            System.out.println("Failed : HTTP error code : " + response.getStatus());
-            // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
-//            throw new RuntimeException("Failed : HTTP error code : "
-//                    + response.getStatus());
+            if (LOGGER.isWarnEnabled())
+                LOGGER.warn("Не удалось выполнить GET запрос к oData 1С  \n\t\t" + url + query + " \n\t\t HTTP error code : " + response.getStatus());
+            return null;
         }
 
-        // Результат будем писать в лог, на самом низком уровне логирования todo
+        // Результат будем писать в лог, на самом низком уровне логирования
         String resut = response.readEntity(String.class);
+        if (LOGGER.isTraceEnabled())
+            LOGGER.trace("Результат запроса к oData 1С. Запрос: \n\t\t" + url + query + "\n\t\t Результат: " + resut);
 
         // Через джексон
         ObjectMapper mapper = new ObjectMapper();
-        JsonNode rootNode = null;
+        JsonNode rootNode;
         try {
             rootNode = mapper.readValue(resut, JsonNode.class);
         } catch (IOException e) {
-            e.printStackTrace();
+            if (LOGGER.isWarnEnabled())
+                LOGGER.warn("Не удалось преобразовать JSON в объект. \n\t\t" + resut + "\n\t\t", e);
+            return null;
         }
 
         return rootNode.get("value");
-
 
     }
 
@@ -193,7 +202,7 @@ public class ProcessMonitor {
         Client client = ClientBuilder.newClient(config);
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.basic(userName, pass);
         client.register(feature);
-//        WebTarget webTarget = client.target(url).path(query);
+//        WebTarget webTarget = client.target(url).path(query); // Так почему то не работает!
         WebTarget webTarget = client.target(url + query);
 
 
@@ -201,12 +210,16 @@ public class ProcessMonitor {
         Response response = invocationBuilder.post(Entity.entity(jsonObj, MediaType.APPLICATION_JSON));
 
         if (response.getStatus() != 200) {
-            // Исключение не выбрасываем исключение, а пишем информацию в ЛОГ // todo
-//            throw new RuntimeException("Failed : HTTP error code : "
-//                    + response.getStatus());
+            if (LOGGER.isWarnEnabled())
+                LOGGER.warn("Не удалось выполнить POST запрос к oData 1С. \n\t\t Адрес: " + url + query +
+                        "\n\t\t Запрос: " + jsonObj + "\n\t\t HTTP error code : " + response.getStatus());
+            return;
         }
 
-//        String resut = response.getEntity(String.class); // Будем писать в лог todo
+        // Результат будем писать в лог, на самом низком уровне логирования
+        if (LOGGER.isTraceEnabled())
+            LOGGER.trace("Запрос успешно отправлен в 1С через oData. \n\t\t Адрес: " + url + query +
+                    "\n\t\t Запрос: " + jsonObj + "\n\t\t HTTP error code : " + response.getStatus());
 
     }
 
@@ -408,25 +421,30 @@ public class ProcessMonitor {
 
                     // Распознаем нужную область
                     templateRec = templatesRecognition.get(fileInfo.templateID);
-                    if (templateRec == null) return; // возможно тут будет запись в лог файл todo
+                    if (templateRec == null) {
+                        if (LOGGER.isWarnEnabled())
+                            LOGGER.warn("Не найден шаблон для распознавания с ID: " + fileInfo.templateID);
+                        return;
+                    }
 
                     ITesseract instance = new Tesseract();  // JNA Interface Mapping
                     instance.setLanguage("rus");
                     try {
                         // Будет так:
                         List<IIOImage> iioImages = ImageIOHelper.getIIOImageList(fileInfo.file);
-                        if (iioImages.size() == 0)
-                            return; // Тут будет запись в лог файл TODO
+                        if (iioImages.size() == 0) {
+                            if (LOGGER.isDebugEnabled())
+                                LOGGER.debug("Файл пустой: " + fileInfo.file);
+                            return;
+                        }
                         //iioImages.set(0).getRenderedImage(). //Поиграться, рассчитать координаты, создать зону для распознования TODO
                         result = instance.doOCR(iioImages.subList(0,0), new Rectangle(iioImages.get(0).getRenderedImage().getWidth(), iioImages.get(0).getRenderedImage().getHeight() / 2)); // Сюда передаем 0 элементы, и зону для распознования todo
 
 //                        result = instance.doOCR(iioImages, templateRec.areaRecognition); // Пока так!) todo
 //                        result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
-                    } catch (TesseractException e) {
-                        System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
-                        return;
-                    } catch (IOException e) {
-                        System.err.println(e.getMessage()); // Тут будет запись в лог файл TODO
+                    } catch (TesseractException | IOException e) {
+                        if (LOGGER.isWarnEnabled())
+                            LOGGER.warn("Ошибка распознавания", e);
                         return;
                     }
 
@@ -491,9 +509,11 @@ public class ProcessMonitor {
                     // то флаг (isInterrupted()) не переводится в true. Для этого
                     // вручную вызывается метод interrupt() у текущего потока.
                     Thread.currentThread().interrupt();
-                    e.printStackTrace();
+                    if (LOGGER.isErrorEnabled())
+                        LOGGER.error("Recognizer was interrupt", e);
                 } catch (ParseException e) {
-                    e.printStackTrace();
+                    if (LOGGER.isErrorEnabled())
+                        LOGGER.error("Recognizer error", e);
                 }
 //            }
         }

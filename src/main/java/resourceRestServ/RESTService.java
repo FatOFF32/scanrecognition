@@ -74,9 +74,14 @@ public class RESTService {
         ObjectNode responseObj = mapper.createObjectNode();
 
         if (rootNode == null || rootNode.get("filePath") == null) {
+//                || rootNode.get("ratioSpecifiedX") == null // Позволим передавать сюда не только нужные параметры
+//                || rootNode.get("ratioSpecifiedY") == null
+//                || rootNode.get("ratioWidth") == null
+//                || rootNode.get("ratioHeight") == null) {
 
             responseObj.put("Error", true);
-            responseObj.put("ErrorText", "Не задан путь распознователя");
+//            responseObj.put("ErrorText", "Должны быть переданы данные: \n filePath \n ratioSpecifiedX \n ratioSpecifiedY \n ratioWidth \n ratioHeight");
+            responseObj.put("ErrorText", "Не указан путь к файлу для распознавания");
             responseObj.put("RecognizedText", "");
 
             try {
@@ -93,16 +98,20 @@ public class RESTService {
 
         ITesseract instance = new Tesseract();  // JNA Interface Mapping
         instance.setLanguage("rus");
-        // удалить отсюда
-        try {
-            // Будет так:
-            List<IIOImage> iioImages = ImageIOHelper.getIIOImageList(new File(rootNode.get("filePath").asText()));
-//            if (iioImages.size() == 0)
-            //iioImages.set(0).getRenderedImage(). //Поиграться, рассчитать координаты, создать зону для распознования TODO
-            resultRecognize = instance.doOCR(iioImages.subList(0,1), new Rectangle(iioImages.get(0).getRenderedImage().getWidth(), iioImages.get(0).getRenderedImage().getHeight() / 2)); // Сюда передаем 0 элементы, и зону для распознования todo
 
-//                        result = instance.doOCR(iioImages, templateRec.areaRecognition); // Пока так!) todo
-//                        result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
+        try {
+            // Преобразуем наш PDF в list IIOImage.
+            List<IIOImage> iioImages = ImageIOHelper.getIIOImageList(new File(rootNode.get("filePath").asText()));
+
+            // Рассчитаем координаты области распознования
+            int specifiedX = (int)(iioImages.get(0).getRenderedImage().getWidth() * Math.min(Math.abs(rootNode.get("ratioSpecifiedX").asDouble(0)), 1));
+            int specifiedY = (int)(iioImages.get(0).getRenderedImage().getHeight() * Math.min(Math.abs(rootNode.get("ratioSpecifiedY").asDouble(0)), 1));
+            int width = (int)(iioImages.get(0).getRenderedImage().getWidth() * Math.min(Math.abs(rootNode.get("ratioWidth").asDouble(1)), 1));
+            int height = (int)(iioImages.get(0).getRenderedImage().getHeight() * Math.min(Math.abs(rootNode.get("ratioHeight").asDouble(1)), 1));
+
+            // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо)
+            resultRecognize = instance.doOCR(iioImages.subList(0,1), new Rectangle(specifiedX, specifiedY, width, height));
+
         } catch (TesseractException | IOException e) {
             responseObj.put("Error", true);
             responseObj.put("ErrorText", e.getMessage());
@@ -117,26 +126,6 @@ public class RESTService {
                     .entity(responseJson)
                     .build();
         }
-        // До сюда
-/* // Раскоментить потом, Удалить вверху по instance.setLanguage("rus");
-        try {
-            resultRecognize = instance.doOCR(new File(rootNode.get("filePath").asText()));
-        } catch (TesseractException e) {
-//            System.err.println(e.getMessage());
-            responseObj.put("Error", true);
-            responseObj.put("ErrorText", e.getMessage());
-            responseObj.put("RecognizedText", "");
-
-            try {
-                responseJson = mapper.writeValueAsString(responseObj);
-            } catch (IOException e1) {
-                e1.printStackTrace();
-            }
-            return Response.status(Response.Status.BAD_REQUEST)
-                    .entity(responseJson)
-                    .build();
-        }
-*/
 
         responseObj.put("Error", false);
         responseObj.put("ErrorText", "");
@@ -156,7 +145,7 @@ public class RESTService {
     @Path("testStartService")
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
-    public Response updateAuthData() {
+    public Response testStartService() {
 
         return Response.status(Response.Status.OK)
                 .entity("REST сервис автораспознавателя стартовал!")
