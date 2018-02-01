@@ -60,8 +60,15 @@ public class test {
 
         // test rest сервиса
         //test.testRest();
+        //test.testRest1();
 
-        test.testRest1();
+//        SearchRules obj1 = SearchRules.SKIP_CHAR;
+//        obj1.setValue(new Integer(10));
+//        SearchRules obj2 = SearchRules.SKIP_CHAR;
+//        obj2.setValue(new Integer(20));
+//        SearchRules obj3 = SearchRules.SEARCH_TYPE;
+//        obj3.setValue(DataTypesConversion.DATE);
+
 
 
         // test rest сервиса put

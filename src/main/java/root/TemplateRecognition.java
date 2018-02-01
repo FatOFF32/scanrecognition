@@ -8,9 +8,9 @@ public class TemplateRecognition {
 
     String templateID;
     HashMap<WantedValues, List<String>> wantedWords;
-    Rectangle areaRecognition;
+    RatioRectangle areaRecognition;
 
-    public TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, Rectangle areaRecognition) {
+    public TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, RatioRectangle areaRecognition) {
         this.templateID = templateID;
         this.wantedWords = wantedWords;
         this.areaRecognition = areaRecognition;

@@ -242,7 +242,7 @@ public class ProcessMonitor {
 
             // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования
             JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
-                    "$filter=DeletionMark%20ne%20true$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры
+                    "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
                     "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
             if (templates == null)
                 return;
@@ -262,7 +262,16 @@ public class ProcessMonitor {
                     List<String> list = wantedWords.get(wv);
                     list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
                 }
-                templatesRecognition.put(template.get("Ref_Key").asText(), new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords));
+
+                // Получим и запишим в спец. объект коэффициенты расположения области в скане для распознования
+                RatioRectangle ratioRectangle = new RatioRectangle(
+                        Math.min(Math.abs(template.get("КоэффНачалаОбластиX").asDouble(0)), 1),
+                        Math.min(Math.abs(template.get("КоэффНачалаОбластиY").asDouble(0)), 1),
+                        Math.min(Math.abs(template.get("КоэффРазмераОбластиX").asDouble(1)), 1),
+                        Math.min(Math.abs(template.get("КоэффРазмераОбластиY").asDouble(1)), 1));
+
+                templatesRecognition.put(template.get("Ref_Key").asText(),
+                        new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords, ratioRectangle));
             }
         }
 
@@ -430,18 +439,23 @@ public class ProcessMonitor {
                     ITesseract instance = new Tesseract();  // JNA Interface Mapping
                     instance.setLanguage("rus");
                     try {
-                        // Будет так:
+                        // Преобразуем наш PDF в list IIOImage.
                         List<IIOImage> iioImages = ImageIOHelper.getIIOImageList(fileInfo.file);
                         if (iioImages.size() == 0) {
                             if (LOGGER.isDebugEnabled())
                                 LOGGER.debug("Файл пустой: " + fileInfo.file);
                             return;
                         }
-                        //iioImages.set(0).getRenderedImage(). //Поиграться, рассчитать координаты, создать зону для распознования TODO
-                        result = instance.doOCR(iioImages.subList(0,0), new Rectangle(iioImages.get(0).getRenderedImage().getWidth(), iioImages.get(0).getRenderedImage().getHeight() / 2)); // Сюда передаем 0 элементы, и зону для распознования todo
 
-//                        result = instance.doOCR(iioImages, templateRec.areaRecognition); // Пока так!) todo
-//                        result = instance.doOCR(fileInfo.file, templateRec.areaRecognition);
+                        // Рассчитаем координаты области распознования
+                        int specifiedX = (int)(iioImages.get(0).getRenderedImage().getWidth() * templateRec.areaRecognition.ratioSpecifiedX);
+                        int specifiedY = (int)(iioImages.get(0).getRenderedImage().getHeight() * templateRec.areaRecognition.ratioSpecifiedY);
+                        int width = (int)(iioImages.get(0).getRenderedImage().getWidth() * templateRec.areaRecognition.ratioWidth);
+                        int height = (int)(iioImages.get(0).getRenderedImage().getHeight() * templateRec.areaRecognition.ratioHeight);
+
+                        // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо)
+                        result = instance.doOCR(iioImages.subList(0,1), new Rectangle(specifiedX, specifiedY, width, height));
+
                     } catch (TesseractException | IOException e) {
                         if (LOGGER.isWarnEnabled())
                             LOGGER.warn("Ошибка распознавания", e);
@@ -453,10 +467,13 @@ public class ProcessMonitor {
                     for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
                         String resultCopy = result.toLowerCase();
                         int idx = -1;
-                        for (String st : entry.getValue()) {
+                        for (int i = 0; i < entry.getValue().size(); i++) {
+                            String st = entry.getValue().get(i);
                             idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения https://lucene.apache.org/core/ todo
-                            if (idx == -1) break;
-                            resultCopy = resultCopy.substring(idx + st.length());
+                            if (idx == -1)
+                                if (i == entry.getValue().size()-1 || !entry.getValue().get(i+1).startsWith("^or"))
+                                    break; //todo тут остановился
+                            else resultCopy = resultCopy.substring(idx + st.length());
                         }
 
                         // Если не нашли искомые строки, то вставляем пустое значение.
