@@ -15,6 +15,7 @@ import org.eclipse.jetty.server.Server;
 import org.glassfish.jersey.client.ClientConfig;
 //import org.glassfish.jersey.jetty.JettyHttpContainerFactory;
 import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
+import org.glassfish.jersey.media.multipart.MultiPartFeature;
 import org.glassfish.jersey.servlet.ServletContainer;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.slf4j.Logger;
@@ -129,7 +130,8 @@ public class ProcessMonitor {
             // Переделать под протокол SSL todo
 
             ResourceConfig config = new ResourceConfig();
-            config.packages("resourceRestServ");
+            config.packages("resourceRestServ"); //.register(MultiPartFeature.class) // Для использования MULTIPART_FORM_DATA
+            config.register(MultiPartFeature.class);
             ServletHolder servlet = new ServletHolder(new ServletContainer(config));
 
             Server server = new Server(restPort);

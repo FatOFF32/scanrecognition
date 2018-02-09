@@ -4,9 +4,12 @@ import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import net.sourceforge.tess4j.util.ImageIOHelper;
+import net.sourceforge.tess4j.util.PdfUtilities;
 import org.codehaus.jackson.JsonNode;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ObjectNode;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
 import root.ProcessMonitor;
 import root.WantedValues;
 
@@ -15,8 +18,7 @@ import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.awt.*;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.util.List;
 import java.util.Map;
 
@@ -73,11 +75,11 @@ public class RESTService {
 
         ObjectNode responseObj = mapper.createObjectNode();
 
-        if (rootNode == null || rootNode.get("filePath") == null) {
-//                || rootNode.get("ratioSpecifiedX") == null // Позволим передавать сюда не только нужные параметры
-//                || rootNode.get("ratioSpecifiedY") == null
-//                || rootNode.get("ratioWidth") == null
-//                || rootNode.get("ratioHeight") == null) {
+        if (rootNode == null || rootNode.get("filePath") == null
+                || rootNode.get("ratioSpecifiedX") == null
+                || rootNode.get("ratioSpecifiedY") == null
+                || rootNode.get("ratioWidth") == null
+                || rootNode.get("ratioHeight") == null) {
 
             responseObj.put("Error", true);
 //            responseObj.put("ErrorText", "Должны быть переданы данные: \n filePath \n ratioSpecifiedX \n ratioSpecifiedY \n ratioWidth \n ratioHeight");
@@ -141,10 +143,88 @@ public class RESTService {
                 .build();
     }
 
+    @POST
+    @Path("convertPdf2Png")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.MULTIPART_FORM_DATA)
+    public Response convertPdf2Png(@FormDataParam("datafile") InputStream fileInputStream,
+                                       @FormDataParam("datafile") FormDataContentDisposition fileMetaData) {
+
+        Response response = null;
+        OutputStream outPDF = null;
+        File filePNG = null;
+        File filePDF = null;
+        File[] filesPNG = null;
+        try {
+            filePDF = File.createTempFile("forConvert", ".pdf");
+            outPDF = new FileOutputStream(filePDF);
+
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+
+            while((bytesRead = fileInputStream.read(buffer)) !=-1) {
+                outPDF.write(buffer, 0, bytesRead);
+            }
+
+            fileInputStream.close();
+            outPDF.flush();
+
+           filesPNG = PdfUtilities.convertPdf2Png(filePDF);
+           filePNG = filesPNG[0];
+        } catch (IOException e) {
+
+            // В случае ошибки вернём её в 1с todo подумать как вернуть текст ошибки в 1с
+            response = Response.status(Response.Status.BAD_GATEWAY)
+                    .entity(e.getMessage())
+                    .build();
+        } finally {
+            try {
+                outPDF.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            if (filePDF != null && filePDF.exists()) {
+                filePDF.delete();
+            }
+
+        }
+
+        // тест todo
+//        response = Response.status(Response.Status.OK)
+//                .entity("Какаф то херня!")
+//                .build();
+
+
+        // Сформируем ответ с преобразованным файлом. Сам файл отправим в 1С как двоичные данные.
+        // P.S. можно в таких случаях возвращать поток, но мы это не будем делать, т.к. нам не нужно записывать данные в файл.
+        // Как реализовать возврат потока здесь https://stackoverflow.com/questions/3496209/input-and-output-binary-streams-using-jersey
+        try {
+            if (response == null)
+                response = Response.status(Response.Status.OK).entity(filePNG).build();
+            return response;
+        } finally {
+//            // Удалим временные файлы todo доделать удаление файлов
+//            if (filesPNG != null && filesPNG.length > 0) {
+//                File var10 = new File(filesPNG[0].getParent());
+//                File[] var11 = filesPNG;
+//                int var12 = filesPNG.length;
+//
+//                for(int var13 = 0; var13 < var12; ++var13) {
+//                    File var14 = var11[var13];
+//                    var14.delete();
+//                }
+//
+//                var10.delete();
+//            }
+        }
+
+
+    }
+
     @GET
     @Path("testStartService")
     @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_HTML)
     public Response testStartService() {
 
         return Response.status(Response.Status.OK)

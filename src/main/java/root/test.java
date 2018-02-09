@@ -70,7 +70,9 @@ public class test {
 //        obj3.setValue(DataTypesConversion.DATE);
 
 
-
+//        File file = new File("D:\\Java\\Лекии_Задания\\wp\\Parts\\full.txt");
+//        file.
+//
         // test rest сервиса put
 //        test.testRestPut();
 
