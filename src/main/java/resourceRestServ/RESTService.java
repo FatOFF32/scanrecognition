@@ -10,6 +10,7 @@ import org.codehaus.jackson.map.ObjectMapper;
 import org.codehaus.jackson.node.ObjectNode;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
+import root.FileInputStreamWithDeleteFile;
 import root.ProcessMonitor;
 import root.WantedValues;
 
@@ -200,8 +201,9 @@ public class RESTService {
         // Как реализовать возврат потока здесь https://stackoverflow.com/questions/3496209/input-and-output-binary-streams-using-jersey
         try {
             if (response == null)
-                response = Response.status(Response.Status.OK).entity(filePNG).build();
-            return response;
+                response = Response.status(Response.Status.OK).entity(new FileInputStreamWithDeleteFile(filePNG)).build();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
         } finally {
 //            // Удалим временные файлы todo доделать удаление файлов
 //            if (filesPNG != null && filesPNG.length > 0) {
@@ -218,7 +220,7 @@ public class RESTService {
 //            }
         }
 
-
+        return response;
     }
 
     @GET
