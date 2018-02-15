@@ -130,8 +130,8 @@ public class ProcessMonitor {
             // Переделать под протокол SSL todo
 
             ResourceConfig config = new ResourceConfig();
-            config.packages("resourceRestServ"); //.register(MultiPartFeature.class) // Для использования MULTIPART_FORM_DATA
-            config.register(MultiPartFeature.class);
+            config.packages("resourceRestServ");
+            config.register(MultiPartFeature.class); // Для использования передачи файлов (MULTIPART_FORM_DATA)
             ServletHolder servlet = new ServletHolder(new ServletContainer(config));
 
             Server server = new Server(restPort);

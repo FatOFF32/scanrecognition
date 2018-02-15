@@ -11,6 +11,7 @@ import org.codehaus.jackson.node.ObjectNode;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 import root.FileInputStreamWithDeleteFile;
+import root.FileStreamingOutput;
 import root.ProcessMonitor;
 import root.WantedValues;
 
@@ -18,6 +19,7 @@ import javax.imageio.IIOImage;
 import javax.ws.rs.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+import javax.ws.rs.core.StreamingOutput;
 import java.awt.*;
 import java.io.*;
 import java.util.List;
@@ -76,15 +78,17 @@ public class RESTService {
 
         ObjectNode responseObj = mapper.createObjectNode();
 
-        if (rootNode == null || rootNode.get("filePath") == null
-                || rootNode.get("ratioSpecifiedX") == null
-                || rootNode.get("ratioSpecifiedY") == null
-                || rootNode.get("ratioWidth") == null
-                || rootNode.get("ratioHeight") == null) {
+        if (rootNode == null
+                || (rootNode.get("filePath") == null && rootNode.get("fileData") == null)
+                || rootNode.get("КоэффНачалаОбластиX") == null
+                || rootNode.get("КоэффНачалаОбластиY") == null
+                || rootNode.get("КоэффРазмераОбластиX") == null
+                || rootNode.get("КоэффРазмераОбластиY") == null) {
 
             responseObj.put("Error", true);
-//            responseObj.put("ErrorText", "Должны быть переданы данные: \n filePath \n ratioSpecifiedX \n ratioSpecifiedY \n ratioWidth \n ratioHeight");
-            responseObj.put("ErrorText", "Не указан путь к файлу для распознавания");
+            responseObj.put("ErrorText",
+                    "Должны быть переданы данные: \n filePath ИЛИ fileData\n КоэффНачалаОбластиX \n КоэффНачалаОбластиY \n КоэффРазмераОбластиX \n КоэффРазмераОбластиY");
+//            responseObj.put("ErrorText", "Не указан путь к файлу для распознавания");
             responseObj.put("RecognizedText", "");
 
             try {
@@ -147,15 +151,14 @@ public class RESTService {
     @POST
     @Path("convertPdf2Png")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
-    @Produces(MediaType.MULTIPART_FORM_DATA)
+    @Produces(MediaType.APPLICATION_OCTET_STREAM)
     public Response convertPdf2Png(@FormDataParam("datafile") InputStream fileInputStream,
                                        @FormDataParam("datafile") FormDataContentDisposition fileMetaData) {
 
-        Response response = null;
-        OutputStream outPDF = null;
-        File filePNG = null;
-        File filePDF = null;
+        File filePNG;
         File[] filesPNG = null;
+        File filePDF = null;
+        OutputStream outPDF = null;
         try {
             filePDF = File.createTempFile("forConvert", ".pdf");
             outPDF = new FileOutputStream(filePDF);
@@ -170,14 +173,31 @@ public class RESTService {
             fileInputStream.close();
             outPDF.flush();
 
+            // Конечно не хорошо создавать файлы, лучше конвертировать из одного input stream в другой.
+            // Но файлов будет немного, поэтому воспользуемся встроенной в tesseract библиотекой
            filesPNG = PdfUtilities.convertPdf2Png(filePDF);
            filePNG = filesPNG[0];
         } catch (IOException e) {
 
-            // В случае ошибки вернём её в 1с todo подумать как вернуть текст ошибки в 1с
-            response = Response.status(Response.Status.BAD_GATEWAY)
+            // Удалим временные файлы
+            if (filesPNG != null && filesPNG.length > 0) {
+                File var10 = new File(filesPNG[0].getParent());
+                File[] var11 = filesPNG;
+                int var12 = filesPNG.length;
+
+                for (int var13 = 0; var13 < var12; ++var13) {
+                    File var14 = var11[var13];
+                    var14.delete();
+                }
+
+                var10.delete();
+            }
+
+            // В случае ошибки вернём её в 1с
+            return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(e.getMessage())
                     .build();
+
         } finally {
             try {
                 outPDF.close();
@@ -190,37 +210,8 @@ public class RESTService {
 
         }
 
-        // тест todo
-//        response = Response.status(Response.Status.OK)
-//                .entity("Какаф то херня!")
-//                .build();
-
-
-        // Сформируем ответ с преобразованным файлом. Сам файл отправим в 1С как двоичные данные.
-        // P.S. можно в таких случаях возвращать поток, но мы это не будем делать, т.к. нам не нужно записывать данные в файл.
-        // Как реализовать возврат потока здесь https://stackoverflow.com/questions/3496209/input-and-output-binary-streams-using-jersey
-        try {
-            if (response == null)
-                response = Response.status(Response.Status.OK).entity(new FileInputStreamWithDeleteFile(filePNG)).build();
-        } catch (FileNotFoundException e) {
-            e.printStackTrace();
-        } finally {
-//            // Удалим временные файлы todo доделать удаление файлов
-//            if (filesPNG != null && filesPNG.length > 0) {
-//                File var10 = new File(filesPNG[0].getParent());
-//                File[] var11 = filesPNG;
-//                int var12 = filesPNG.length;
-//
-//                for(int var13 = 0; var13 < var12; ++var13) {
-//                    File var14 = var11[var13];
-//                    var14.delete();
-//                }
-//
-//                var10.delete();
-//            }
-        }
-
-        return response;
+        // Сформируем ответ с преобразованным файлом.
+        return Response.status(Response.Status.OK).entity(new FileStreamingOutput(filePNG, filesPNG)).build();
     }
 
     @GET

@@ -76,6 +76,16 @@ public class test {
         // test rest сервиса put
 //        test.testRestPut();
 
+        try{
+            System.out.println("1");
+            throw new IOException("Error");
+        }catch (IOException e){
+            System.out.println(e);
+        }finally {
+            System.out.println("2");
+        }
+
+        System.out.println("3");
     }
 
     public static void testRest1(){
