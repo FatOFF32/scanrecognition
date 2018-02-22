@@ -39,6 +39,8 @@ import static java.util.stream.Collectors.toCollection;
 
 public class ProcessMonitor {
 
+    // todo перенести инициализацию в конструктор. У сложенных классов тоже!
+
     // Пул потоков распознавателя, задачи для обработки
     ThreadPoolExecutor poolExecutor = new ThreadPoolExecutor(1,1,15, TimeUnit.MINUTES, new ArrayBlockingQueue(200));
     // Обработанные файлы, данные по которым отправляем в 1С
@@ -242,7 +244,7 @@ public class ProcessMonitor {
             directoryForMonitor.clear();
             templatesRecognition.clear();
 
-            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования
+            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
             JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
                     "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
                     "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
@@ -267,10 +269,10 @@ public class ProcessMonitor {
 
                 // Получим и запишим в спец. объект коэффициенты расположения области в скане для распознования
                 RatioRectangle ratioRectangle = new RatioRectangle(
-                        Math.min(Math.abs(template.get("КоэффНачалаОбластиX").asDouble(0)), 1),
-                        Math.min(Math.abs(template.get("КоэффНачалаОбластиY").asDouble(0)), 1),
-                        Math.min(Math.abs(template.get("КоэффРазмераОбластиX").asDouble(1)), 1),
-                        Math.min(Math.abs(template.get("КоэффРазмераОбластиY").asDouble(1)), 1));
+                        template.get("КоэффНачалаОбластиX").asDouble(),
+                        template.get("КоэффНачалаОбластиY").asDouble(),
+                        template.get("КоэффРазмераОбластиX").asDouble(),
+                        template.get("КоэффРазмераОбластиY").asDouble());
 
                 templatesRecognition.put(template.get("Ref_Key").asText(),
                         new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords, ratioRectangle));
@@ -330,7 +332,7 @@ public class ProcessMonitor {
         public void run() {
 
             // Поспим, пока не прилетит настройка из 1С. Будет возникать во время первого запуска автораспознавателя
-            while (url.equals("")){
+            while (url.isEmpty()){
                 synchronized (ProcessMonitor.class){ //class, т.к переменные статические
                     try {
                         ProcessMonitor.class.wait();
@@ -449,18 +451,14 @@ public class ProcessMonitor {
                             return;
                         }
 
-                        // Рассчитаем координаты области распознования
-                        int specifiedX = (int)(iioImages.get(0).getRenderedImage().getWidth() * templateRec.areaRecognition.ratioSpecifiedX);
-                        int specifiedY = (int)(iioImages.get(0).getRenderedImage().getHeight() * templateRec.areaRecognition.ratioSpecifiedY);
-                        int width = (int)(iioImages.get(0).getRenderedImage().getWidth() * templateRec.areaRecognition.ratioWidth);
-                        int height = (int)(iioImages.get(0).getRenderedImage().getHeight() * templateRec.areaRecognition.ratioHeight);
-
                         // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо)
-                        result = instance.doOCR(iioImages.subList(0,1), new Rectangle(specifiedX, specifiedY, width, height));
+                        int width = iioImages.get(0).getRenderedImage().getWidth();
+                        int height = iioImages.get(0).getRenderedImage().getHeight();
+                        result = instance.doOCR(iioImages.subList(0,1), templateRec.getAreaRecognition(width, height));
 
                     } catch (TesseractException | IOException e) {
                         if (LOGGER.isWarnEnabled())
-                            LOGGER.warn("Ошибка распознавания", e);
+                            LOGGER.warn("Ошибка распознавания:", e);
                         return;
                     }
 
@@ -529,10 +527,10 @@ public class ProcessMonitor {
                     // вручную вызывается метод interrupt() у текущего потока.
                     Thread.currentThread().interrupt();
                     if (LOGGER.isErrorEnabled())
-                        LOGGER.error("Recognizer was interrupt", e);
+                        LOGGER.error("Recognizer was interrupt:", e);
                 } catch (ParseException e) {
                     if (LOGGER.isErrorEnabled())
-                        LOGGER.error("Recognizer error", e);
+                        LOGGER.error("Recognizer error:", e);
                 }
 //            }
         }

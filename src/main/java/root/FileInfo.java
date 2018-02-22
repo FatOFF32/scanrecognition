@@ -23,4 +23,13 @@ public class FileInfo {
                 ", foundWords=" + foundWords +
                 '}';
     }
+
+    public static String getFileExtension(String fileName) {
+        // если в имени файла есть точка и она не является первым символом в названии файла
+        if(fileName.lastIndexOf(".") != -1 && fileName.lastIndexOf(".") != 0)
+            // то вырезаем все знаки до последней точки в названии файла, то есть ХХХХХ.txt -> .txt
+            return fileName.substring(fileName.lastIndexOf("."));
+            // в противном случае возвращаем пустую строку, то есть расширение не найдено
+        else return "";
+    }
 }

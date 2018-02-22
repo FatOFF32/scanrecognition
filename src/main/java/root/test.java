@@ -76,16 +76,19 @@ public class test {
         // test rest сервиса put
 //        test.testRestPut();
 
-        try{
-            System.out.println("1");
-            throw new IOException("Error");
-        }catch (IOException e){
-            System.out.println(e);
-        }finally {
-            System.out.println("2");
-        }
-
-        System.out.println("3");
+//        try{
+//            System.out.println("1");
+//            throw new IOException("Error");
+//        }catch (IOException e){
+//            System.out.println(e);
+//        }finally {
+//            System.out.println("2");
+//        }
+//
+//        System.out.println("3");
+        
+//        String string = null;
+//        System.out.println(string.isEmpty());
     }
 
     public static void testRest1(){

@@ -8,16 +8,40 @@ public class TemplateRecognition {
 
     String templateID;
     HashMap<WantedValues, List<String>> wantedWords;
-    RatioRectangle areaRecognition;
+    RatioRectangle ratioRectangle;
 
-    public TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, RatioRectangle areaRecognition) {
+    TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, RatioRectangle ratioRectangle) {
         this.templateID = templateID;
         this.wantedWords = wantedWords;
-        this.areaRecognition = areaRecognition;
+        this.ratioRectangle = ratioRectangle;
     }
 
-    public TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords) {
+    TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords) {
         this.templateID = templateID;
         this.wantedWords = wantedWords;
+    }
+
+    double getRatioSpecifiedXArea(){
+        return ratioRectangle != null ? ratioRectangle.getRatioSpecifiedX() : 0;
+    }
+
+    double getRatioSpecifiedYArea(){
+        return ratioRectangle != null ? ratioRectangle.getRatioSpecifiedY() : 0;
+    }
+
+    double getRatioWidthArea(){
+        return ratioRectangle != null ? ratioRectangle.getRatioWidth() : 1;
+    }
+
+    double getRatioHeightArea(){
+        return  ratioRectangle != null ? ratioRectangle.getRatioHeight() : 1;
+    }
+
+    Rectangle getAreaRecognition(int width, int height){
+
+        return new Rectangle((int)(width * getRatioSpecifiedXArea()),
+                (int)(height * getRatioSpecifiedYArea()),
+                (int)(width * getRatioWidthArea()),
+                (int)(height * getRatioHeightArea()));
     }
 }
