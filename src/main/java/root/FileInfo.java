@@ -13,6 +13,11 @@ public class FileInfo {
     public FileInfo(String templateID, File file) {
         this.templateID = templateID;
         this.file = file;
+        this.foundWords = new HashMap<>();
+    }
+
+    public void addFoundWord(WantedValues key, String value){
+        foundWords.put(key, value);
     }
 
     @Override

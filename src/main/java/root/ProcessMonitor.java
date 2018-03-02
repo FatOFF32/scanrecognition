@@ -68,7 +68,7 @@ public class ProcessMonitor {
 
     public ProcessMonitor(int restPort) {
 
-        this.restPort = restPort;
+        ProcessMonitor.restPort = restPort;
         initialize();
 
     }
@@ -463,24 +463,45 @@ public class ProcessMonitor {
                     }
 
                     // Сформируем структуру ответа с найденными словами.
-                    fileInfo.foundWords = new HashMap<>();
+//                    fileInfo.foundWords = new HashMap<>(); todo delete
                     for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
                         String resultCopy = result.toLowerCase();
-                        int idx = -1;
+                        int idx = -1; // Индекс найденной строки по шаблону
+                        int idxWord = 0; // Индекс слова в массиве полученных слов
+                        boolean searchType = false;
                         for (int i = 0; i < entry.getValue().size(); i++) {
                             String st = entry.getValue().get(i);
-                            idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения https://lucene.apache.org/core/ todo
+                            // Проверки на условия "Взять следующий за" и "Искать тип"
+                            if (st.startsWith("^getNextAfter")) { //todo подумать над названием
+                                idx = 0; // Установим значение отличное от -1
+                                if (i == entry.getValue().size()-1)
+                                    break;
+                                if (entry.getValue().get(i+1).matches("\\d+")){ //todo затестить на корректность обработки символов и дабла
+                                    idxWord = Integer.parseInt(entry.getValue().get(i+1));
+                                    if (i+3 < entry.getValue().size() && entry.getValue().get(i+2).startsWith("^searchType"))
+                                        searchType = true;
+                                }else if (entry.getValue().get(i+1).startsWith("^searchType"))
+                                    searchType = true;
+                                break;
+                            }
+                            if (entry.getValue().get(i+1).startsWith("^searchType")){
+                                searchType = true;
+                                break;
+                            }
+
+                            idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
                             if (idx == -1)
+                                // Проверка на или
                                 if (i == entry.getValue().size()-1 || !entry.getValue().get(i+1).startsWith("^or"))
-                                    break; //todo тут остановился
+                                    break;
                             else resultCopy = resultCopy.substring(idx + st.length());
                         }
 
                         // Если не нашли искомые строки, то вставляем пустое значение.
                         // В пративном случае получаем значение из текста.
-                        if (idx == -1) fileInfo.foundWords.put(entry.getKey(), "");
+                        if (idx == -1) fileInfo.addFoundWord(entry.getKey(), "");
                         else {
-                            // Получим коллекцию из 3 слов, для того, чтобы было удобно парсить дату.
+                            // Получим коллекцию из слов, далее работать будем с ней.
                             ArrayList<String> resultCol = Stream.of(resultCopy)
                                     // Указываем, что он должен быть параллельным
                                     .parallel()
@@ -493,28 +514,59 @@ public class ProcessMonitor {
                                     // Отбрасываем невалидные слова
                                     .filter(word -> !"".equals(word))
                                     // Оставляем только первые 3
-                                    .limit(3)
+                                    //.limit(3) // Пока не ограничиваем поиск 3-мя значениями...
                                     // Создаем коллекцию слов
                                     .collect(toCollection(ArrayList::new));
 
                             // Если тип дата, то составляем значение из з-х
                             if (entry.getKey().type == DataTypesConversion.DATE) {
-                                if (resultCol.size() == 3) {
-                                    String pattern;
+                                if (resultCol.size() > 2) {
+                                    String pattern = null;
 
-                                    // пока работаем с 2 форматами дат...
-                                    if (resultCol.get(1).matches("\\d{2}"))
-                                        pattern = "dd MM yyyy";
-                                    else pattern = "dd MMMM yyyy";
+                                    // Если установлен признак searchType, то ищем дату, пока не найдём,
+                                    // иначе делаем одну итерацию поиска.
+                                    String dateStr;
+                                    boolean continueSearch = true;
+                                    while (continueSearch){
 
-                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601
-                                    Date date = new SimpleDateFormat(pattern).parse(String.join(" ", resultCol));
-                                    fileInfo.foundWords.put(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
+                                        idxWord++;
+                                        continueSearch = searchType && resultCol.size() > idxWord + 1;
+                                        // пока работаем с 2 форматами дат...
+                                        if (resultCol.get(idxWord).matches("\\d{2}"))
+                                            pattern = "dd MM yyyy";
+                                        else if (resultCol.get(idxWord + 1).matches("\\^[А-Яа-я]+$"))
+                                            pattern = "dd MMMM yyyy";
+                                        else continue;
 
-                                } else fileInfo.foundWords.put(entry.getKey(), "");
+                                        // Получим строку из 3 слов для определения даты.
+                                        dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 1));
+
+                                        try {
+                                            // Распарсим полученную дату, затем переведем её в формат ISO 8601
+                                            Date date = new SimpleDateFormat(pattern).parse(dateStr);
+                                            fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
+                                            continueSearch = false;
+                                        } catch (ParseException e) {
+                                            //continue; Не получилось? Продолжаем поиски!
+                                        }
+                                    }
+
+                                    if (pattern == null)
+                                        fileInfo.addFoundWord(entry.getKey(), "");
+
+                                } else fileInfo.addFoundWord(entry.getKey(), "");
                             } else if (resultCol.size() > 0)
-                                fileInfo.foundWords.put(entry.getKey(), resultCol.get(0));
-                            else fileInfo.foundWords.put(entry.getKey(), "");
+                                // поиск данных по типу пока работает только для даты и числа.
+                                if (searchType && entry.getKey().type == DataTypesConversion.DECIMAL){
+                                    while (resultCol.size() > idxWord){
+                                        if (resultCol.get(idxWord).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
+                                            fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                                            break;
+                                        }
+                                        idxWord++;
+                                    }
+                                } else fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                            else fileInfo.addFoundWord(entry.getKey(), "");
                         }
                     }
 
@@ -528,11 +580,45 @@ public class ProcessMonitor {
                     Thread.currentThread().interrupt();
                     if (LOGGER.isErrorEnabled())
                         LOGGER.error("Recognizer was interrupt:", e);
-                } catch (ParseException e) {
-                    if (LOGGER.isErrorEnabled())
-                        LOGGER.error("Recognizer error:", e);
                 }
 //            }
+        }
+
+        private boolean prepareResultString(String resultStr, Map.Entry<WantedValues, List<String>> entry){ // todo подумать, может и удалить её вовсе...
+
+            int idx = -1;
+            int idxWord = 0;
+            boolean searchType = false;
+            for (int i = 0; i < entry.getValue().size(); i++) {
+                String st = entry.getValue().get(i);
+                // Проверки на условия "Взять следующий за" и "Искать тип"
+                if (st.startsWith("^getNextAfter")) { //todo подумать над названием
+                    idx = 0; // Установим значение отличное от -1
+                    if (i == entry.getValue().size()-1)
+                        break;
+                    if (entry.getValue().get(i+1).matches("\\d+")){ //todo затестить на корректность обработки символов и дабла
+                        idxWord = Integer.parseInt(entry.getValue().get(i+1));
+                        if (i+3 < entry.getValue().size() && entry.getValue().get(i+2).startsWith("^searchType"))
+                            searchType = true;
+                    }else if (entry.getValue().get(i+1).startsWith("^searchType"))
+                        searchType = true;
+                    break;
+                }
+                if (entry.getValue().get(i+1).startsWith("^searchType")){
+                    searchType = true;
+                    break;
+                }
+
+                idx = resultStr.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
+                if (idx == -1)
+                    // Проверка на или
+                    if (i == entry.getValue().size()-1 || !entry.getValue().get(i+1).startsWith("^or"))
+                        break;
+                    else resultStr = resultStr.substring(idx + st.length());
+            }
+
+            return idx != -1;
+
         }
     }
 }
