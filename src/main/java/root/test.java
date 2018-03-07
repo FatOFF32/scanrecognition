@@ -18,6 +18,7 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.index.*;
 import org.apache.lucene.search.*;
+import org.apache.lucene.search.highlight.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.analysis.*;
@@ -32,6 +33,7 @@ import org.glassfish.jersey.logging.LoggingFeature;
 //import org.json.simple.JSONArray;
 //import org.json.simple.JSONObject;
 //import org.json.simple.parser.JSONParser;
+
 
 import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
@@ -50,13 +52,13 @@ import static com.sun.org.apache.xml.internal.utils.DOMHelper.createDocument;
 import static java.util.stream.Collectors.toCollection;
 
 public class test {
-    public static void main(String[] args) throws ParseException, IOException {
+    public static void main(String[] args) throws ParseException, IOException, InvalidTokenOffsetsException {
 
         // попробуем распарсить нужную нам информацию...
         //testParseResult();
 
         // Попытка поработать с нечетким поиском
-        //test.testSearch();
+        test.testSearch();
 
         // test rest сервиса
         //test.testRest();
@@ -291,13 +293,14 @@ public class test {
         System.out.println(new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssz").format(date));
     }
 
-    public static void testSearch() throws IOException, ParseException {
+    public static void testSearch() throws IOException, ParseException, InvalidTokenOffsetsException {
         //Query query = new FuzzyQuery(new Term("Счет-фактура", " бла бла бла Счет-fфактура бла бла бла"));
 
-        final Document teaserDoc = test.MessageIndexer.createWith("бла бла бла Счет-фактура  бла бла бла", "бла бла бла Счет-фактура бла бла бла");
+        final Document teaserDoc = test.MessageIndexer.createWith("бла бла бла Счт-фактура  бла бла бла", "бла бла бла Счт-фактура бла бла бла");
 //        final Document teaserDoc = test.MessageIndexer.createWith("Привет Хабр!", "Это демонстрация работы простейшего нечёткого поиска");
         final MessageIndexer indexer = new test.MessageIndexer("/tmp/teaser_index");
-        indexer.index(true, teaserDoc);
+        Analyzer analyzer = new RussianAnalyzer();
+        indexer.index(true, teaserDoc, analyzer);
 
         final TestLucene search = new test.TestLucene(indexer.readIndex());
 
@@ -305,7 +308,8 @@ public class test {
 //        System.out.print("Введите запрос:\t");
 //        final String toSearch = reader.nextLine(); // Scans the next token
 
-        search.fuzzySearch("Счет", "title", 10);
+        //search.fuzzySearch("Счет", "title", 10);
+        search.fuzzySearch("Счет", "title", 10, analyzer);
 //        search.fuzzySearch("прривт", "title", 10);
     }
 
@@ -339,9 +343,26 @@ public class test {
 
             final int maxEdits = 2; // This is very important variable. It regulates fuzziness of the query
             final Query query = new FuzzyQuery(term, maxEdits);
-            final TopDocs search = indexSearcher.search(query, limit);
+            final TopDocs search = indexSearcher.search(query, limit); // todo потокобезопасный, использовать для всех потоков
             final ScoreDoc[] hits = search.scoreDocs;
+
+            //Explanation explanation = indexSearcher.explain(query, 1); //мое
             showHits(hits);
+        }
+
+        public void fuzzySearch(final String toSearch, final String searchField, final int limit, Analyzer analyzer) throws IOException, ParseException, InvalidTokenOffsetsException {
+            final IndexSearcher indexSearcher = new IndexSearcher(reader);
+
+            final Term term = new Term(searchField, toSearch);
+
+            final int maxEdits = 2; // This is very important variable. It regulates fuzziness of the query
+            final Query query = new FuzzyQuery(term, maxEdits);
+            final TopDocs search = indexSearcher.search(query, limit); // todo потокобезопасный, использовать для всех потоков
+            final ScoreDoc[] hits = search.scoreDocs;
+
+            //Explanation explanation = indexSearcher.explain(query, 1); //мое
+            showHits(hits);
+            highlight(search, indexSearcher, query, analyzer);
         }
 
         private void showHits(final ScoreDoc[] hits) throws IOException {
@@ -357,6 +378,27 @@ public class test {
             }
         }
 
+        private void highlight(TopDocs hits, IndexSearcher searcher, Query query, Analyzer analyzer) throws IOException, InvalidTokenOffsetsException {
+            SimpleHTMLFormatter htmlFormatter = new SimpleHTMLFormatter();
+            Highlighter highlighter = new Highlighter(htmlFormatter, new QueryScorer(query));
+            for (int i = 0; i < 10; i++) {
+                int id = hits.scoreDocs[i].doc;
+                Document doc = searcher.doc(id);
+                String text = doc.get("title");
+
+                // Тут получим OffsetAttribute offsetAtt = (OffsetAttribute)tokenStream.addAttribute(OffsetAttribute.class);
+                // затем tokenStream.incrementToken()
+                // получаем highlighter.getFragmentScorer().getTokenScore() и если больше 0 то это найденное слово
+                // получаем начальный символ, это и будет наш начальный символ интересующей нас строки offsetAtt.startOffset()
+                TokenStream tokenStream = TokenSources.getAnyTokenStream(searcher.getIndexReader(), id, "title", analyzer);
+                TextFragment[] frag = highlighter.getBestTextFragments(tokenStream, text, false, 10);//highlighter.getBestFragments(tokenStream, text, 3, "...");
+                for (int j = 0; j < frag.length; j++) {
+                    if ((frag[j] != null) && (frag[j].getScore() > 0)) {
+                        System.out.println((frag[j].toString()));
+                    }
+                }
+            }
+        }
     }
 
 /*
@@ -382,8 +424,9 @@ public class test {
 
             final FieldType textIndexedType = new FieldType();
             textIndexedType.setStored(true);
-            textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS);
+            textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS);
             textIndexedType.setTokenized(true);
+            //textIndexedType.setStoreTermVectorPositions(true); // выдает ошибку...
 
             //index title
             Field title = new Field("title", titleStr, textIndexedType);
@@ -417,7 +460,7 @@ public class test {
 */
 
         public void index(final Boolean create, List<Document> documents, Analyzer analyzer) throws IOException {
-            final Directory dir = FSDirectory.open(Paths.get(pathToIndexFolder));
+            final Directory dir = FSDirectory.open(Paths.get(pathToIndexFolder)); // Подумать на счет использования RAMDirectory. Очиста индекса тут https://wiki.apache.org/lucene-java/LuceneFAQ (Как удалить документы из индекса?)
             final IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
             if (create) {
                 // Create a new index in the directory, removing any
@@ -428,6 +471,8 @@ public class test {
                 iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
             }
 
+            // мои доработки
+            //iwc.ыу;
             final IndexWriter w = new IndexWriter(dir, iwc);
             w.addDocuments(documents);
             w.close();
@@ -460,6 +505,12 @@ public class test {
             final List<Document> oneDocumentList = new ArrayList<>();
             oneDocumentList.add(document);
             index(create, oneDocumentList);
+        }
+
+        public void index(final Boolean create, Document document, Analyzer analyzer) throws IOException {
+            final List<Document> oneDocumentList = new ArrayList<>();
+            oneDocumentList.add(document);
+            index(create, oneDocumentList, analyzer);
         }
 
 /*
