@@ -13,6 +13,8 @@ import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 
 import org.apache.lucene.analysis.ru.RussianAnalyzer;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FieldType;
@@ -22,10 +24,9 @@ import org.apache.lucene.search.highlight.*;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.analysis.*;
-import org.codehaus.jackson.JsonNode;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.node.ArrayNode;
-import org.codehaus.jackson.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 //import org.glassfish.hk2.utilities.reflection.Logger;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
@@ -310,6 +311,7 @@ public class test {
 
         //search.fuzzySearch("Счет", "title", 10);
         search.fuzzySearch("Счет", "title", 10, analyzer);
+        search.fuzzySearch("хер", "title", 10, analyzer);
 //        search.fuzzySearch("прривт", "title", 10);
     }
 
@@ -363,6 +365,7 @@ public class test {
             //Explanation explanation = indexSearcher.explain(query, 1); //мое
             showHits(hits);
             highlight(search, indexSearcher, query, analyzer);
+            System.out.println("Позиция найденного символа: " + getIdxWord(search, indexSearcher, query, analyzer));
         }
 
         private void showHits(final ScoreDoc[] hits) throws IOException {
@@ -379,9 +382,10 @@ public class test {
         }
 
         private void highlight(TopDocs hits, IndexSearcher searcher, Query query, Analyzer analyzer) throws IOException, InvalidTokenOffsetsException {
-            SimpleHTMLFormatter htmlFormatter = new SimpleHTMLFormatter();
-            Highlighter highlighter = new Highlighter(htmlFormatter, new QueryScorer(query));
-            for (int i = 0; i < 10; i++) {
+            //SimpleHTMLFormatter htmlFormatter = new SimpleHTMLFormatter();
+            //Highlighter highlighter = new Highlighter(htmlFormatter, new QueryScorer(query));
+            Highlighter highlighter = new Highlighter(new QueryScorer(query));
+            for (int i = 0; i < hits.scoreDocs.length; i++) {
                 int id = hits.scoreDocs[i].doc;
                 Document doc = searcher.doc(id);
                 String text = doc.get("title");
@@ -399,6 +403,68 @@ public class test {
                 }
             }
         }
+
+        // Получение позиции символа в тексте
+        private int getIdxWord1(TopDocs hits, IndexSearcher searcher, Query query, Analyzer analyzer) throws IOException, InvalidTokenOffsetsException {
+
+            Highlighter highlighter = new Highlighter(new QueryScorer(query));
+            for (int i = 0; i < hits.scoreDocs.length; i++) {
+                int id = hits.scoreDocs[i].doc;
+                Document doc = searcher.doc(id);
+                String text = doc.get("title");
+
+                TokenStream tokenStream = analyzer.tokenStream("title", text);
+
+                TextFragment currentFrag = new TextFragment(new StringBuilder(), 0, 0); // docFrags.size()
+                ((QueryScorer)highlighter.getFragmentScorer()).setMaxDocCharsToAnalyze(highlighter.getMaxDocCharsToAnalyze());
+
+
+                TokenStream newStream = highlighter.getFragmentScorer().init(tokenStream);
+                if (newStream != null)
+                    tokenStream = newStream;
+
+                highlighter.getFragmentScorer().startFragment(currentFrag);
+                highlighter.getTextFragmenter().start(text, tokenStream);
+                OffsetAttribute offsetAtt = tokenStream.addAttribute(OffsetAttribute.class);
+                tokenStream.reset();
+                while (tokenStream.incrementToken())
+                    if (highlighter.getFragmentScorer().getTokenScore() > 0)
+                        return offsetAtt.startOffset();
+            }
+            return -1;
+        }
+
+
+        // Получение позиции символа в тексте через lucene
+        private int getIdxWord(TopDocs hits, IndexSearcher searcher, Query query, Analyzer analyzer) throws IOException, InvalidTokenOffsetsException {
+
+            Highlighter highlighter = new Highlighter(new QueryScorer(query));
+            for (int i = 0; i < hits.scoreDocs.length; i++) {
+                int id = hits.scoreDocs[i].doc;
+                Document doc = searcher.doc(id);
+                String text = doc.get("title");
+
+                TokenStream tokenStream = analyzer.tokenStream("title", text);
+
+                TextFragment currentFrag = new TextFragment(new StringBuilder(), 0, 0); // docFrags.size()
+                ((QueryScorer)highlighter.getFragmentScorer()).setMaxDocCharsToAnalyze(highlighter.getMaxDocCharsToAnalyze());
+
+
+                TokenStream newStream = highlighter.getFragmentScorer().init(tokenStream);
+                if (newStream != null)
+                    tokenStream = newStream;
+
+                highlighter.getFragmentScorer().startFragment(currentFrag);
+                highlighter.getTextFragmenter().start(text, tokenStream);
+                OffsetAttribute offsetAtt = tokenStream.addAttribute(OffsetAttribute.class);
+                tokenStream.reset();
+                while (tokenStream.incrementToken())
+                    if (highlighter.getFragmentScorer().getTokenScore() > 0)
+                        return offsetAtt.startOffset();
+            }
+            return -1;
+        }
+
     }
 
 /*

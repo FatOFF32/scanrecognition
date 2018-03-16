@@ -9,16 +9,19 @@ public class TemplateRecognition {
     String templateID;
     HashMap<WantedValues, List<String>> wantedWords;
     RatioRectangle ratioRectangle;
+    boolean useFuzzySearch;
 
-    TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, RatioRectangle ratioRectangle) {
+    TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, boolean useFuzzySearch, RatioRectangle ratioRectangle) {
         this.templateID = templateID;
         this.wantedWords = wantedWords;
         this.ratioRectangle = ratioRectangle;
+        this.useFuzzySearch = useFuzzySearch;
     }
 
-    TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords) {
+    TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, boolean useFuzzySearch) {
         this.templateID = templateID;
         this.wantedWords = wantedWords;
+        this.useFuzzySearch = useFuzzySearch;
     }
 
     double getRatioSpecifiedXArea(){

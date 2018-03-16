@@ -27,6 +27,7 @@
     </properties>
 
 
+    <!-- todo убрать лишние зависимости, и exclusions -->
     <dependencies>
         <dependency>
             <groupId>net.sourceforge.tess4j</groupId>
@@ -44,7 +45,7 @@
             </exclusions>
 
         </dependency>
-        <!-- https://mvnrepository.com/artifact/org.apache.lucene/lucene-core -->
+        <!-- https://mvnrepository.com/artifact/org.apache.lucene/lucene-core-->
         <dependency>
             <groupId>org.apache.lucene</groupId>
             <artifactId>lucene-core</artifactId>
@@ -136,7 +137,7 @@
             </exclusions>
 
         </dependency>
-        <dependency>
+        <!--dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-json-jackson</artifactId>
             <version>${org.glassfish.jersey.version}</version>
@@ -151,7 +152,7 @@
                 </exclusion>
             </exclusions>
 
-        </dependency>
+        </dependency-->
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
             <artifactId>jersey-media-multipart</artifactId>
@@ -217,7 +218,7 @@
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->
-        <dependency>
+        <!--dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
             <version>2.9.3</version>
@@ -231,6 +232,23 @@
                     <artifactId>log4j</artifactId>
                 </exclusion>
             </exclusions>
+
+        </dependency-->
+        <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.9.4</version>
+            <!--exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>log4j</groupId>
+                    <artifactId>log4j</artifactId>
+                </exclusion>
+            </exclusions-->
 
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.eclipse.jetty/jetty-maven-plugin -->
@@ -284,7 +302,7 @@
             </exclusions>
 
         </dependency>
-        <dependency>
+        <!--dependency>
             <groupId>org.codehaus.jackson</groupId>
             <artifactId>jackson-core-asl</artifactId>
             <version>1.9.2</version>
@@ -315,7 +333,7 @@
                 </exclusion>
             </exclusions>
 
-        </dependency>
+        </dependency-->
 
     </dependencies>
 

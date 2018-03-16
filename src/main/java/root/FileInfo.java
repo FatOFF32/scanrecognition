@@ -20,6 +20,10 @@ public class FileInfo {
         foundWords.put(key, value);
     }
 
+    public String getFilePath(){
+        return file.getPath();
+    }
+
     @Override
     public String toString() {
         return "FileInfo{" +

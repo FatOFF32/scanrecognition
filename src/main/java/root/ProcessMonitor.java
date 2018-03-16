@@ -1,12 +1,12 @@
 package root;
 
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import net.sourceforge.tess4j.util.ImageIOHelper;
-import org.codehaus.jackson.JsonNode;
-import org.codehaus.jackson.map.ObjectMapper;
-import org.codehaus.jackson.node.ObjectNode;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.handler.HandlerList;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -275,7 +275,8 @@ public class ProcessMonitor {
                         template.get("КоэффРазмераОбластиY").asDouble());
 
                 templatesRecognition.put(template.get("Ref_Key").asText(),
-                        new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords, ratioRectangle));
+                        new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords,
+                                template.get("ИспользоватьНечеткийПоиск").asBoolean(), ratioRectangle));
             }
         }
 
@@ -318,7 +319,7 @@ public class ProcessMonitor {
             list.add("№");
             list.add("от");
             wantedWords.put(new WantedValues("Дата", "Дата"), list);
-            templatesRecognition.put("1111", new TemplateRecognition("1111", wantedWords)); //Подумать, а надо ли ИД в TemplateRecognition, он же есть в мапе.
+            templatesRecognition.put("1111", new TemplateRecognition("1111", wantedWords, false)); //Подумать, а надо ли ИД в TemplateRecognition, он же есть в мапе.
 
             // Для теста пока будем использовать одну папку и один шаблон для распознования удалить todo
             directoryForMonitor.put(new File("D:\\Учеба JAVA\\Для распознования\\Сканы"), "1111"); //"D:\\Учеба JAVA\\Для распознования\\Сканы" D:\Java\Для распознования\Сканы
@@ -472,7 +473,7 @@ public class ProcessMonitor {
                         for (int i = 0; i < entry.getValue().size(); i++) {
                             String st = entry.getValue().get(i);
                             // Проверки на условия "Взять следующий за" и "Искать тип"
-                            if (st.startsWith("^getNextAfter")) { //todo подумать над названием
+                            if (st.startsWith("^getNextAfter")) { //todo подумать над названием. Взять следующий после (например) 3
                                 idx = 0; // Установим значение отличное от -1
                                 if (i == entry.getValue().size()-1)
                                     break;
@@ -483,18 +484,20 @@ public class ProcessMonitor {
                                 }else if (entry.getValue().get(i+1).startsWith("^searchType"))
                                     searchType = true;
                                 break;
-                            }
-                            if (entry.getValue().get(i+1).startsWith("^searchType")){
+                            } else if (st.startsWith("^searchType")){
                                 searchType = true;
                                 break;
                             }
 
-                            idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
-                            if (idx == -1)
+                            //idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
+                            // Получение индекса с использование нечеткого поиска.
+                            // todo остановился тут! Затестить!
+                            idx = getIdxFoundWord(st, resultCopy, fileInfo.getFilePath(), templateRec.useFuzzySearch);
+                            if (idx == -1) {
                                 // Проверка на или
-                                if (i == entry.getValue().size()-1 || !entry.getValue().get(i+1).startsWith("^or"))
+                                if (i == entry.getValue().size() - 1 || !entry.getValue().get(i + 1).startsWith("^or"))
                                     break;
-                            else resultCopy = resultCopy.substring(idx + st.length());
+                            } else resultCopy = resultCopy.substring(idx + st.length());
                         }
 
                         // Если не нашли искомые строки, то вставляем пустое значение.
@@ -582,6 +585,18 @@ public class ProcessMonitor {
                         LOGGER.error("Recognizer was interrupt:", e);
                 }
 //            }
+        }
+
+        private int getIdxFoundWord(String toSearch, String text, String file, boolean useFuzzySearch){
+
+            int idx;
+            if (useFuzzySearch){
+                LuceneSearch.addTextToIndex(file, text);
+                idx = LuceneSearch.getIdxFoundWord(toSearch, file, 10);
+                LuceneSearch.deleteFieldFromIndex(file, text);
+            }else idx = text.indexOf(toSearch);
+
+            return idx;
         }
 
         private boolean prepareResultString(String resultStr, Map.Entry<WantedValues, List<String>> entry){ // todo подумать, может и удалить её вовсе...
