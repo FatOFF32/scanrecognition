@@ -53,6 +53,7 @@ public class ProcessMonitor {
     private static volatile String pass; // = "123456";//"111";
     private static volatile Integer quantityThreads = 1;
     private static volatile int restPort; // Устанавливаем в параметрах запуска
+
     // logger
     private static final Logger LOGGER = LoggerFactory.getLogger(ProcessMonitor.class);
 
@@ -76,6 +77,7 @@ public class ProcessMonitor {
     void initialize() {
 
         int curQuantityThreads = quantityThreads;
+        long curTimeUpdateLuceneWriter = System.currentTimeMillis() + 1000000; // Очищаем данные индекса lucene каждые 1000 сек.
 
         // RESTServ, рест сервис, который будет принимать настройки из 1С
         Thread restServ = new RESTServ();
@@ -103,6 +105,20 @@ public class ProcessMonitor {
                     poolExecutor.setMaximumPoolSize(quantityThreads);
                 }
             }
+
+            // Закроем writer lucene, чтобы удалить не нужные индексы, затем откроем их снова
+//            if (curTimeUpdateLuceneWriter < System.currentTimeMillis()) {
+//                curTimeUpdateLuceneWriter = System.currentTimeMillis() + 1000000;
+                synchronized (LuceneSearch.class) {
+                    try {
+                        LuceneSearch.rediscoverWriter();
+                        System.out.println("!!!!!!!!!!!!!!Удаление индекса прошло успешно!!!");
+                    } catch (IOException e) {
+                        if (LOGGER.isErrorEnabled())
+                            LOGGER.error("Не удалось удалить пересоздать индекс. Причина: ", e);
+                    }
+                }
+//            }
 
             // Проверим, живы ли наши потоки, если нет, пересоздадим и запустим их.
             if (!restServ.isAlive()){
@@ -237,47 +253,61 @@ public class ProcessMonitor {
         Set<File> processedFile = new HashSet<>();
         // Текущее время для автообновления настроек из 1С. Будем запрашивать обновления каждую минуту.
         long curTime = System.currentTimeMillis();
-        long updateTime = 60000;
+        long updateTime = 60000; // todo увеличить время обновление шаблонов сканов из-за синхронайзта
 
         private void writeTemplatesRecognition() {
 
-            directoryForMonitor.clear();
-            templatesRecognition.clear();
+            // Засинхронимся
+            synchronized (templatesRecognition) {
 
-            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
-            JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
-                    "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
-                    "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
-            if (templates == null)
-                return;
-            for (JsonNode template : templates){
+                System.out.println("Засинхронились на шаблоне"); // todo Удалить, для теста
 
-                // Запишем данные для мониторинга директорий
-                directoryForMonitor.put(new File(template.get("КаталогПоискаСканов").asText()), template.get("Ref_Key").asText());
+                directoryForMonitor.clear();
+                templatesRecognition.clear();
 
-                JsonNode searchStrings = template.get("СтрокиПоиска");
-                HashMap<WantedValues, List<String>> wantedWords = new HashMap<>();
-                for (JsonNode sStr : searchStrings){
-
-                    WantedValues wv = new WantedValues(sStr.get("ИмяИскомогоЗначения").asText(),
-                            sStr.get("ТипИскомогоЗначения").asText());
-                    wantedWords.putIfAbsent(wv, new ArrayList<>());
-
-                    List<String> list = wantedWords.get(wv);
-                    list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
+                try {
+                    Thread.sleep(20000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
                 }
 
-                // Получим и запишим в спец. объект коэффициенты расположения области в скане для распознования
-                RatioRectangle ratioRectangle = new RatioRectangle(
-                        template.get("КоэффНачалаОбластиX").asDouble(),
-                        template.get("КоэффНачалаОбластиY").asDouble(),
-                        template.get("КоэффРазмераОбластиX").asDouble(),
-                        template.get("КоэффРазмераОбластиY").asDouble());
+                // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
+                JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
+                        "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
+                        "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
 
-                templatesRecognition.put(template.get("Ref_Key").asText(),
-                        new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords,
-                                template.get("ИспользоватьНечеткийПоиск").asBoolean(), ratioRectangle));
+                if (templates == null)
+                    return;
+                for (JsonNode template : templates) {
+
+                    // Запишем данные для мониторинга директорий
+                    directoryForMonitor.put(new File(template.get("КаталогПоискаСканов").asText()), template.get("Ref_Key").asText());
+
+                    JsonNode searchStrings = template.get("СтрокиПоиска");
+                    HashMap<WantedValues, List<String>> wantedWords = new HashMap<>();
+                    for (JsonNode sStr : searchStrings) {
+
+                        WantedValues wv = new WantedValues(sStr.get("ИмяИскомогоЗначения").asText(),
+                                sStr.get("ТипИскомогоЗначения").asText());
+                        wantedWords.putIfAbsent(wv, new ArrayList<>());
+
+                        List<String> list = wantedWords.get(wv);
+                        list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
+                    }
+
+                    // Получим и запишим в спец. объект коэффициенты расположения области в скане для распознования
+                    RatioRectangle ratioRectangle = new RatioRectangle(
+                            template.get("КоэффНачалаОбластиX").asDouble(),
+                            template.get("КоэффНачалаОбластиY").asDouble(),
+                            template.get("КоэффРазмераОбластиX").asDouble(),
+                            template.get("КоэффРазмераОбластиY").asDouble());
+
+                    templatesRecognition.put(template.get("Ref_Key").asText(),
+                            new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords,
+                                    template.get("ИспользоватьНечеткийПоиск").asBoolean(), ratioRectangle));
+                }
             }
+            System.out.println("Закончили обновление шаблона"); // todo Удалить, для теста
         }
 
         private void writeProcessedFile() {
@@ -463,8 +493,11 @@ public class ProcessMonitor {
                         return;
                     }
 
-                    // Сформируем структуру ответа с найденными словами.
-//                    fileInfo.foundWords = new HashMap<>(); todo delete
+                    // Проиндексируем текст, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
+                    if (templateRec.useFuzzySearch)
+                        // fileInfo.getFilePath(), путь используется как указатель поля для индекса.
+                        LuceneSearch.addTextToIndex(fileInfo.getFilePath(), result);
+
                     for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
                         String resultCopy = result.toLowerCase();
                         int idx = -1; // Индекс найденной строки по шаблону
@@ -487,18 +520,28 @@ public class ProcessMonitor {
                             } else if (st.startsWith("^searchType")){
                                 searchType = true;
                                 break;
-                            }
+                            } else if (st.startsWith("^or"))
+                                continue;
 
                             //idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
                             // Получение индекса с использование нечеткого поиска.
                             // todo остановился тут! Затестить!
-                            idx = getIdxFoundWord(st, resultCopy, fileInfo.getFilePath(), templateRec.useFuzzySearch);
+                            idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath(), templateRec.useFuzzySearch);
                             if (idx == -1) {
-                                // Проверка на или
-                                if (i == entry.getValue().size() - 1 || !entry.getValue().get(i + 1).startsWith("^or"))
+                                // Если следующее условие не "ИЛИ" то прерываем, в противном случае проверим условие "ИЛИ"
+                                if (!(i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or")))
                                     break;
-                            } else resultCopy = resultCopy.substring(idx + st.length());
+                            } else {
+                                idx = idx + st.length();//Найденный индекс + длинна найденного слова.
+                                // Если нашли слово, но следующее выражение стоит "ИЛИ", то последующее за "ИЛИ" слово - пропускаем
+                                if (i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or"))
+                                    i =+2;
+                            }
                         }
+
+                        // Нашли слово? Производим обрезку!
+                        if (idx != -1)
+                            resultCopy = resultCopy.substring(idx);
 
                         // Если не нашли искомые строки, то вставляем пустое значение.
                         // В пративном случае получаем значение из текста.
@@ -508,8 +551,8 @@ public class ProcessMonitor {
                             ArrayList<String> resultCol = Stream.of(resultCopy)
                                     // Указываем, что он должен быть параллельным
                                     .parallel()
-                                    // Убираем из каждой строки знаки препинания
-                                    .map(line -> line.replaceAll("\\pP", " "))
+                                    // Убираем из каждой строки знаки препинания и переносы строки
+                                    .map(line -> line.replaceAll("[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n\\E]", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
                                     // Каждую строку разбивваем на слова и уплощаем результат до стримма слов
                                     .flatMap(line -> Arrays.stream(line.split(" ")))
                                     // Обрезаем пробелы
@@ -524,12 +567,16 @@ public class ProcessMonitor {
                             // Если тип дата, то составляем значение из з-х
                             if (entry.getKey().type == DataTypesConversion.DATE) {
                                 if (resultCol.size() > 2) {
-                                    String pattern = null;
+
+                                    String dateStr;
+                                    String pattern;
+                                    boolean continueSearch = true;
+                                    boolean successfulSearch = false;
+
+                                    // todo Если нам будут попадаться даты в с разделителями "-" или "_", обработать их тут!
 
                                     // Если установлен признак searchType, то ищем дату, пока не найдём,
                                     // иначе делаем одну итерацию поиска.
-                                    String dateStr;
-                                    boolean continueSearch = true;
                                     while (continueSearch){
 
                                         idxWord++;
@@ -537,24 +584,25 @@ public class ProcessMonitor {
                                         // пока работаем с 2 форматами дат...
                                         if (resultCol.get(idxWord).matches("\\d{2}"))
                                             pattern = "dd MM yyyy";
-                                        else if (resultCol.get(idxWord + 1).matches("\\^[А-Яа-я]+$"))
+                                        else if (resultCol.get(idxWord).matches("[А-Яа-я]+$"))
                                             pattern = "dd MMMM yyyy";
                                         else continue;
 
                                         // Получим строку из 3 слов для определения даты.
-                                        dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 1));
+                                        dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
 
                                         try {
                                             // Распарсим полученную дату, затем переведем её в формат ISO 8601
                                             Date date = new SimpleDateFormat(pattern).parse(dateStr);
                                             fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
                                             continueSearch = false;
+                                            successfulSearch = true;
                                         } catch (ParseException e) {
                                             //continue; Не получилось? Продолжаем поиски!
                                         }
                                     }
 
-                                    if (pattern == null)
+                                    if (!successfulSearch)
                                         fileInfo.addFoundWord(entry.getKey(), "");
 
                                 } else fileInfo.addFoundWord(entry.getKey(), "");
@@ -576,6 +624,10 @@ public class ProcessMonitor {
                     // Запишим инфо файл в очередь, для отправки в 1С.
                     filesToSend.put(fileInfo);
 
+                    // Удалим индекс, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
+                    if (templateRec.useFuzzySearch)
+                        LuceneSearch.deleteFieldFromIndex(fileInfo.getFilePath(), result);
+
                 } catch (InterruptedException e) {
                     // Если выбрасывается исключение InterruptedException,
                     // то флаг (isInterrupted()) не переводится в true. Для этого
@@ -587,14 +639,13 @@ public class ProcessMonitor {
 //            }
         }
 
-        private int getIdxFoundWord(String toSearch, String text, String file, boolean useFuzzySearch){
+        private int getIdxFoundWord(int idxStartsWith, String toSearch, String text, String file, boolean useFuzzySearch){
 
             int idx;
+            idxStartsWith = idxStartsWith == -1 ? 0 : idxStartsWith;
             if (useFuzzySearch){
-                LuceneSearch.addTextToIndex(file, text);
-                idx = LuceneSearch.getIdxFoundWord(toSearch, file, 10);
-                LuceneSearch.deleteFieldFromIndex(file, text);
-            }else idx = text.indexOf(toSearch);
+                idx = LuceneSearch.getIdxFoundWord(toSearch, file, idxStartsWith, 10);
+            }else idx = text.indexOf(toSearch, idxStartsWith);
 
             return idx;
         }

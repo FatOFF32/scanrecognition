@@ -1,7 +1,10 @@
 package root;
 
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.core.SimpleAnalyzer;
+import org.apache.lucene.analysis.custom.CustomAnalyzer;
 import org.apache.lucene.analysis.ru.RussianAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
 import org.apache.lucene.document.Document;
@@ -28,18 +31,33 @@ public class LuceneSearch {
 
     private final Directory dir; // todo Подумать на счет использования RAMDirectory. Очиста индекса тут https://wiki.apache.org/lucene-java/LuceneFAQ (Как удалить документы из индекса?)
     private final Analyzer analyzer;
-    private final IndexWriter writer;
+    private IndexWriter writer; // todo убрал final
+//    private final IndexSearcher indexSearcher;
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ProcessMonitor.class);
 
 
 
     private LuceneSearch() throws IOException {
+
         dir = FSDirectory.open(Paths.get("/tmp/teaser_index"));
-        analyzer = new RussianAnalyzer();
+
+        // Todo Тест попытка обойти спецсимволы
+//        CharArraySet charArraySet = new CharArraySet(1, true);
+//        charArraySet.add("№");
+
+//        analyzer = new RussianAnalyzer(CharArraySet.EMPTY_SET, charArraySet); // todo Переписать анализатор, чтобы не заменял символы типо "-" на пробел и изскал одиночные символы типо № CharArraySet.EMPTY_SET Не помогло!
+//        analyzer = new SimpleAnalyzer();
+        analyzer = CustomAnalyzer.builder()
+                .withTokenizer("whitespace")
+                .addTokenFilter("lowercase")
+                .addTokenFilter("standard")
+                .build();
+
         IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
-        iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE); // todo Проверить будет ли работать
+        iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND); // todo Проверить будет ли работать
         writer = new IndexWriter(dir, iwc);
+//        indexSearcher = new IndexSearcher(DirectoryReader.open(dir));
     }
 
     public static LuceneSearch getInstance(){
@@ -58,6 +76,21 @@ public class LuceneSearch {
         return instance;
     }
 
+    public static void rediscoverWriter() throws IOException {
+
+        LuceneSearch instance = LuceneSearch.getInstance();
+
+        if (instance == null)
+            return;
+
+        instance.writer.deleteUnusedFiles();
+        instance.writer.close();
+
+        IndexWriterConfig iwc = new IndexWriterConfig(instance.analyzer);
+        iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
+        instance.writer = new IndexWriter(instance.dir, iwc);
+    }
+
     public static void addTextToIndex(final String fld, final String text) {
 
         LuceneSearch instance = LuceneSearch.getInstance();
@@ -69,7 +102,7 @@ public class LuceneSearch {
         final FieldType textIndexedType = new FieldType();
 
         textIndexedType.setStored(true);
-        textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS);
+        textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS); //DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS
         textIndexedType.setTokenized(true);
         //textIndexedType.setStoreTermVectorPositions(true); // выдает ошибку...
 
@@ -80,7 +113,8 @@ public class LuceneSearch {
 
         try {
             instance.writer.addDocument(document);
-            instance.writer.flush(); // todo проверить, будет ли закрытый writer добавлять документы в индексы
+            instance.writer.commit();
+            instance.writer.flush();
         } catch (IOException e) {
             if (LOGGER.isErrorEnabled())
                 LOGGER.error("Ошибка добавления документа в индекс Lucene:",  e);
@@ -96,14 +130,14 @@ public class LuceneSearch {
 
         try {
             instance.writer.deleteDocuments(new Term(fld, text));
-            instance.writer.commit(); // todo проверить, будет ли закрытый writer добавлять документы в индексы
+            instance.writer.commit();
             instance.writer.flush();
         } catch (IOException e) {
             e.printStackTrace();
         }
     }
 
-    public static int getIdxFoundWord(final String toSearch, final String searchField, final int limit) {
+    public static int getIdxFoundWord(final String toSearch, final String searchField, final int idxStartsWith, final int limit) {
 
         LuceneSearch instance = LuceneSearch.getInstance();
 
@@ -112,12 +146,15 @@ public class LuceneSearch {
 
         try {
             final IndexSearcher indexSearcher = new IndexSearcher(DirectoryReader.open(instance.dir));
+//            final IndexSearcher indexSearcher = instance.indexSearcher;
             final Term term = new Term(searchField, toSearch);
 
             final int maxEdits = 2; // This is very important variable. It regulates fuzziness of the query
             final Query query = new FuzzyQuery(term, maxEdits);
             final TopDocs search = indexSearcher.search(query, limit); // потокобезопасный, но использовать для всех потоков не можем, т.к. каждый поток создает свой индекс.
             final ScoreDoc[] hits = search.scoreDocs;
+
+            System.out.println(Thread.currentThread().toString() + hits.length); // TODO для теста удалить
 
             // Индекс найденного текста получаем через выделение.
             Highlighter highlighter = new Highlighter(new QueryScorer(query));
@@ -141,7 +178,7 @@ public class LuceneSearch {
                 OffsetAttribute offsetAtt = tokenStream.addAttribute(OffsetAttribute.class);
                 tokenStream.reset();
                 while (tokenStream.incrementToken())
-                    if (highlighter.getFragmentScorer().getTokenScore() > 0)
+                    if (highlighter.getFragmentScorer().getTokenScore() > 0 && offsetAtt.startOffset() >= idxStartsWith)
                         return offsetAtt.startOffset();
             }
         } catch (IOException e) {
