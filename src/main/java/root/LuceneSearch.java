@@ -22,6 +22,8 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Paths;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class LuceneSearch {
 
@@ -29,13 +31,14 @@ public class LuceneSearch {
     private static boolean errorLucene = false; // Чтобы в случае возникновения ошибки не тормозить систему synchronized - ом
 
 
-    private final Directory dir; // todo Подумать на счет использования RAMDirectory. Очиста индекса тут https://wiki.apache.org/lucene-java/LuceneFAQ (Как удалить документы из индекса?)
+    private Directory dir; // todo Подумать на счет использования RAMDirectory. Очиста индекса тут https://wiki.apache.org/lucene-java/LuceneFAQ (Как удалить документы из индекса?), убрал final
     private final Analyzer analyzer;
     private IndexWriter writer; // todo убрал final
 //    private final IndexSearcher indexSearcher;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(ProcessMonitor.class);
+    private ReadWriteLock lock; // Блокировка для очистки индекса
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProcessMonitor.class);
 
 
     private LuceneSearch() throws IOException {
@@ -55,9 +58,11 @@ public class LuceneSearch {
                 .build();
 
         IndexWriterConfig iwc = new IndexWriterConfig(analyzer);
-        iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND); // todo Проверить будет ли работать
+        iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
         writer = new IndexWriter(dir, iwc);
 //        indexSearcher = new IndexSearcher(DirectoryReader.open(dir));
+
+        lock = new ReentrantReadWriteLock();
     }
 
     public static LuceneSearch getInstance(){
@@ -83,12 +88,28 @@ public class LuceneSearch {
         if (instance == null)
             return;
 
-        instance.writer.deleteUnusedFiles();
-        instance.writer.close();
+        instance.lock.writeLock().lock();
 
-        IndexWriterConfig iwc = new IndexWriterConfig(instance.analyzer);
-        iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
-        instance.writer = new IndexWriter(instance.dir, iwc);
+        try{
+
+//            instance.writer.forceMergeDeletes();
+//            instance.writer.deleteUnusedFiles();
+            instance.writer.close();
+
+//            while (instance.writer.isOpen()){
+//                // Подождем пока закроется
+//            }
+
+            instance.dir.close();
+            instance.dir = FSDirectory.open(Paths.get("/tmp/teaser_index"));
+
+            IndexWriterConfig iwc = new IndexWriterConfig(instance.analyzer);
+            iwc.setOpenMode(IndexWriterConfig.OpenMode.CREATE);
+            instance.writer = new IndexWriter(instance.dir, iwc);
+        }finally {
+            instance.lock.writeLock().unlock();
+        }
+
     }
 
     public static void addTextToIndex(final String fld, final String text) {
@@ -98,26 +119,33 @@ public class LuceneSearch {
         if (instance == null)
             return;
 
-        final Document document = new Document();
-        final FieldType textIndexedType = new FieldType();
-
-        textIndexedType.setStored(true);
-        textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS); //DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS
-        textIndexedType.setTokenized(true);
-        //textIndexedType.setStoreTermVectorPositions(true); // выдает ошибку...
-
-        //index title
-        Field title = new Field(fld, text, textIndexedType);
-
-        document.add(title);
+        instance.lock.readLock().lock();
 
         try {
-            instance.writer.addDocument(document);
-            instance.writer.commit();
-            instance.writer.flush();
-        } catch (IOException e) {
-            if (LOGGER.isErrorEnabled())
-                LOGGER.error("Ошибка добавления документа в индекс Lucene:",  e);
+
+            final Document document = new Document();
+            final FieldType textIndexedType = new FieldType();
+
+            textIndexedType.setStored(true);
+            textIndexedType.setIndexOptions(IndexOptions.DOCS_AND_FREQS); //DOCS_AND_FREQS_AND_POSITIONS_AND_OFFSETS
+            textIndexedType.setTokenized(true);
+            //textIndexedType.setStoreTermVectorPositions(true); // выдает ошибку...
+
+            //index title
+            Field title = new Field(fld, text, textIndexedType);
+
+            document.add(title);
+
+            try {
+                instance.writer.addDocument(document);
+                instance.writer.commit();
+                instance.writer.flush();
+            } catch (IOException e) {
+                if (LOGGER.isErrorEnabled())
+                    LOGGER.error("Ошибка добавления документа в индекс Lucene:", e);
+            }
+        }finally {
+            instance.lock.readLock().unlock();
         }
     }
 
@@ -128,12 +156,16 @@ public class LuceneSearch {
         if (instance == null)
             return;
 
+        instance.lock.readLock().lock();
+
         try {
             instance.writer.deleteDocuments(new Term(fld, text));
             instance.writer.commit();
             instance.writer.flush();
         } catch (IOException e) {
             e.printStackTrace();
+        }finally {
+            instance.lock.readLock().unlock();
         }
     }
 
