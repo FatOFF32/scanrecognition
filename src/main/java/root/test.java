@@ -60,11 +60,12 @@ public class test {
         //testParseResult();
 
         // Попытка поработать с нечетким поиском
-        test.testSearch();
+        //test.testSearch();
 
         // test rest сервиса
         //test.testRest();
         //test.testRest1();
+        test.testHttp();
 
 //        SearchRules obj1 = SearchRules.SKIP_CHAR;
 //        obj1.setValue(new Integer(10));
@@ -95,6 +96,27 @@ public class test {
 //        System.out.println(string.isEmpty());
     }
 
+    public static void testHttp(){
+
+        ClientConfig config = new ClientConfig();
+//        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
+        Client client = ClientBuilder.newClient(config);
+
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal("testOData", "123456");
+        client.register(feature);
+//        WebTarget webTarget = client.target(url).path(query); // Почему то так не всегда работает.
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getListScans/11B5675EE95F89E143257FC0002461CB");
+        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getSkan/" +
+                "51a157cb-af0c-46a8-884a-a2bc55f896d3");
+//                "XFx2czEzLWZzYnVoXEJVSFNDXGFyY2hpdmVcUE9fT3V0XNCQ0LrQutCf0L7Qu18wMi4wMi4yMDE4IDAwMDAwXzAwMDAwMDAwMDAxXzAyLjAyLjIwMTggMTc1MDU2X9Ch0JDQndCa0KIt0J/Ql");
+//                "%5C%5Cvs13-fsbuh%5CBUHSC%5Carchive%5CPO_Out%5C%D0%90%D0%BA%D0%BA%D0%9F%D0%BE%D0%BB_02.02.2018%2000000_00000000001_02.02.2018%20175056_%D0%A1%D0%90%D0%9D%D0%9A%D0%A2-%D0%9F%D0%95%D0%A2%D0%95%D0%A0%D0%91%D0%A3%D0%A0%D0%93%2040502810490160000006%20%28%D0%9A%D0%9E%D0%9E%29_7705596339_770501001.pdf");
+//                "XFx2czEzLWZzYnVoXEJVSFNDXGFyY2hpdmVcUE9fT3V0XNCQ0LrQutCf0L7Qu18wMi4wMi4yMDE4IDAwMDAwXzAwMDAwMDAwMDAxXzAyLjAyLjIwMTggMTc1MDU2X9Ch0JDQndCa0KIt0J/QldCi0JXQoNCR0KPQoNCTIDQwNTAyODEwNDkwMTYwMDAwMDA2ICjQmtCe0J4pXzc3MDU1OTYzMzlfNzcwNTAxMDAxLnBkZg==");
+
+        Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
+        Response response = invocationBuilder.get();
+        System.out.println(response.getStatus());
+
+    }
     public static void testRest1(){
 
         ClientConfig config = new ClientConfig();

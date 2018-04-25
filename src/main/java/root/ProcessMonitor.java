@@ -559,7 +559,8 @@ public class ProcessMonitor {
                                 // Указываем, что он должен быть параллельным
                                 .parallel()
                                 // Убираем из каждой строки знаки препинания и переносы строки
-                                .map(line -> line.replaceAll("[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n\\E]", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
+                                // todo перенести спец символы, не участвующие в распозновании в настройку шаблона 1С
+                                .map(line -> line.replaceAll("[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n№\\E]", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
                                 // Каждую строку разбивваем на слова и уплощаем результат до стримма слов
                                 .flatMap(line -> Arrays.stream(line.split(" ")))
                                 // Обрезаем пробелы
@@ -588,12 +589,22 @@ public class ProcessMonitor {
 
                                     idxWord++;
                                     continueSearch = searchType && resultCol.size() > idxWord + 1;
-                                    // пока работаем с 2 форматами дат...
+
+                                    pattern = "dd"; // todo переделать под стригбилдер!!!
+                                    // Проверка месяца.
                                     if (resultCol.get(idxWord).matches("\\d{2}"))
-                                        pattern = "dd MM yyyy";
+                                        pattern += " MM";
                                     else if (resultCol.get(idxWord).matches("[А-Яа-я]+$"))
-                                        pattern = "dd MMMM yyyy";
+                                        pattern += " MMMM";
                                     else continue;
+
+                                    // Проверка года
+                                    if (resultCol.get(idxWord+1).matches("\\d{2}"))
+                                        pattern += " yy";
+                                    else if (resultCol.get(idxWord+1).matches("\\d{4}"))
+                                        pattern += " yyyy";
+                                    else continue;
+
 
                                     // Получим строку из 3 слов для определения даты.
                                     dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
