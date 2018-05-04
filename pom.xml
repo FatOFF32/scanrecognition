@@ -48,7 +48,7 @@
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>root.BlobHandler</mainClass>
+                    <mainClass>root.Main</mainClass>
                 </configuration>
             </plugin>
         </plugins>

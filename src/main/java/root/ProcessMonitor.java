@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
+import net.sourceforge.tess4j.util.ImageHelper;
 import net.sourceforge.tess4j.util.ImageIOHelper;
+import net.sourceforge.tess4j.util.LoadLibs;
 import org.eclipse.jetty.server.Handler;
 import org.eclipse.jetty.server.handler.HandlerList;
 import org.eclipse.jetty.servlet.ServletContextHandler;
@@ -26,6 +28,8 @@ import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 import java.awt.*;
+import java.awt.image.BufferedImage;
+import java.awt.image.RenderedImage;
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
@@ -214,7 +218,7 @@ public class ProcessMonitor {
 
     }
 
-    void putObjectTo1C(String query, String jsonObj) {
+    boolean putObjectTo1C(String query, String jsonObj) {
 
         ClientConfig config = new ClientConfig();
 //        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
@@ -233,7 +237,7 @@ public class ProcessMonitor {
             if (LOGGER.isWarnEnabled())
                 LOGGER.warn("Не удалось выполнить POST запрос к oData 1С. \n\t\t Адрес: " + url + query +
                         "\n\t\t Запрос: " + jsonObj + "\n\t\t HTTP error code : " + response.getStatus());
-            return;
+            return false;
         }
 
         // Результат будем писать в лог, на самом низком уровне логирования
@@ -241,6 +245,7 @@ public class ProcessMonitor {
             LOGGER.trace("Запрос успешно отправлен в 1С через oData. \n\t\t Адрес: " + url + query +
                     "\n\t\t Запрос: " + jsonObj + "\n\t\t HTTP error code : " + response.getStatus());
 
+        return true;
     }
 
     protected class MonitorDirectories extends Thread {
@@ -253,9 +258,17 @@ public class ProcessMonitor {
         Set<File> processedFile = new HashSet<>();
         // Текущее время для автообновления настроек из 1С. Будем запрашивать обновления каждую минуту.
         long curTime = System.currentTimeMillis();
-        long updateTime = 60000; // todo увеличить время обновление шаблонов сканов из-за синхронайзта
+        long updateTime = 60000;
 
         private void writeTemplatesRecognition() {
+
+            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
+            JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
+                    "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
+                    "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
+
+            if (templates == null)
+                return;
 
             // Заблокируем шаблоны на чтение, пока модифицируем данные.
             tempRecLock.writeLock().lock();
@@ -264,13 +277,6 @@ public class ProcessMonitor {
                 directoryForMonitor.clear();
                 templatesRecognition.clear();
 
-                // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
-                JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
-                        "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
-                        "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
-
-                if (templates == null)
-                    return;
                 for (JsonNode template : templates) {
 
                     // Запишем данные для мониторинга директорий
@@ -306,12 +312,12 @@ public class ProcessMonitor {
 
         private void writeProcessedFile() {
 
-            processedFile.clear();
-
             // Подключаемся к 1С через rest, получаем данные о отработанных файлах на стороне java, но не подтвержденных на стороне 1С..
             JsonNode templates = getResultQuery1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем?$select=ПутьКФайлу");
             if(templates == null)
                 return;
+
+            processedFile.clear();
 
             for (JsonNode template : templates){
 
@@ -385,9 +391,12 @@ public class ProcessMonitor {
 
                     arrayFiles = dir.getKey().listFiles();
                     for (File file : arrayFiles) {
+
+                        if (poolExecutor.getQueue().remainingCapacity() == 0)
+                            break;
+
                         if (!filesInProcess.contains(file) && !processedFile.contains(file)) {
                             filesInProcess.add(file);
-
                             poolExecutor.submit(new Recognizer(new FileInfo(dir.getValue(), file)));
                         }
                     }
@@ -415,10 +424,17 @@ public class ProcessMonitor {
                         e.printStackTrace();
                     }
 
-                    putObjectTo1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем", jsonObj);
-
-                    processedFile.add(curFileToSend.file);
-                    filesInProcess.remove(curFileToSend.file);
+                    if (putObjectTo1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем", jsonObj)){
+                        processedFile.add(curFileToSend.file);
+                        filesInProcess.remove(curFileToSend.file);
+                    } else { // Если не удалось отправить - подождем, возможно идет обноление БД 1C
+                        try {
+                            Thread.sleep(10000);
+                            filesToSend.put(curFileToSend);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                    }
                 }
 
                 // Автообновления списка обработанных файлов (чтобы список обработанных не расширялся до бесконечности),
@@ -427,6 +443,7 @@ public class ProcessMonitor {
                     writeProcessedFile();
                     writeTemplatesRecognition();
                     curTime = System.currentTimeMillis();
+//                    System.out.println("Файлы в работе:" + filesInProcess.toString()); // todo Удалить
                 }
 //                } catch (InterruptedException e) {
 //                    // Если выбрасывается исключение InterruptedException,
@@ -450,8 +467,9 @@ public class ProcessMonitor {
         @Override
         public void run() {
 
-            String result;
+            String result; //todo delete
             TemplateRecognition templateRec;
+            BufferedImage bufferedImage;
 
             System.out.println(Thread.currentThread()); // TODO для теста удалить
 
@@ -473,6 +491,8 @@ public class ProcessMonitor {
 
                 // Распознаем нужную область
                 ITesseract instance = new Tesseract();  // JNA Interface Mapping
+                 File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
+                 instance.setDatapath(tessDataFolder.getParent());
                 instance.setLanguage("rus");
                 try {
                     // Преобразуем наш PDF в list IIOImage.
@@ -483,168 +503,36 @@ public class ProcessMonitor {
                         return;
                     }
 
-                    // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо)
-                    int width = iioImages.get(0).getRenderedImage().getWidth();
-                    int height = iioImages.get(0).getRenderedImage().getHeight();
-                    result = instance.doOCR(iioImages.subList(0, 1), templateRec.getAreaRecognition(width, height));
+                    bufferedImage = (BufferedImage)iioImages.get(0).getRenderedImage();
 
-                } catch (TesseractException | IOException e) {
+//                    // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо) todo удалить
+//                    int width = iioImages.get(0).getRenderedImage().getWidth();
+//                    int height = iioImages.get(0).getRenderedImage().getHeight();
+//                    result = instance.doOCR(iioImages.subList(0, 1), templateRec.getAreaRecognition(width, height));
+
+                } catch (IOException e) {
                     if (LOGGER.isWarnEnabled())
-                        LOGGER.warn("Ошибка распознавания:", e);
+                        LOGGER.warn("Ошибка распознования:", e);
                     return;
                 }
 
-                if (LOGGER.isDebugEnabled())
-                    LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  распознанный текст: " + result);
-
-                // Проиндексируем текст, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
-                if (templateRec.useFuzzySearch)
-                    // fileInfo.getFilePath(), путь используется как указатель поля для индекса.
-                    LuceneSearch.addTextToIndex(fileInfo.getFilePath(), result);
-
-                for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
-                    String resultCopy = result.toLowerCase();
-                    int idx = -1; // Индекс найденной строки по шаблону
-                    int idxWord = 0; // Индекс слова в массиве полученных слов
-                    boolean searchType = false;
-                    for (int i = 0; i < entry.getValue().size(); i++) {
-                        String st = entry.getValue().get(i);
-                        // Проверки на условия "Взять следующий за" и "Искать тип"
-                        if (st.startsWith("^getNextAfter")) { //todo подумать над названием. Взять следующий после (например) 3
-                            idx = 0; // Установим значение отличное от -1
-                            if (i == entry.getValue().size() - 1)
-                                break;
-                            if (entry.getValue().get(i + 1).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
-                                idxWord = Integer.parseInt(entry.getValue().get(i + 1));
-                                if (i + 3 < entry.getValue().size() && entry.getValue().get(i + 2).startsWith("^searchType"))
-                                    searchType = true;
-                            } else if (entry.getValue().get(i + 1).startsWith("^searchType"))
-                                searchType = true;
+                try {
+                    // Включение возможности переворачивания изображения, в слючае неудачной попытки извлечения текста
+                    for (int i = 0; i < 4; i++) {
+                        if (foundWords(bufferedImage, instance, templateRec, i)){ // todo установить настройку переворачивания из шаблнона
                             break;
-                        } else if (st.startsWith("^searchType")) {
-                            searchType = true;
-                            break;
-                        } else if (st.startsWith("^or"))
-                            continue;
-
-                        //idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
-                        // Получение индекса с использование нечеткого поиска.
-                        idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath(), templateRec.useFuzzySearch);
-
-                        if (LOGGER.isDebugEnabled())
-                            LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  фраза: " + st + " найдена: " + (idx != -1));
-
-                        if (idx == -1) {
-                            // Если следующее условие не "ИЛИ" то прерываем, в противном случае проверим условие "ИЛИ"
-                            if (!(i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or")))
-                                break;
-                        } else {
-                            idx = idx + st.length();//Найденный индекс + длинна найденного слова.
-                            // Если нашли слово, но следующее выражение стоит "ИЛИ", то последующее за "ИЛИ" слово - пропускаем
-                            if (i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or"))
-                                i = +2;
                         }
+                        // Если ничего не нашли, попробуем перевернуть  изображение на 90 градусов и распознать ещё раз.
+                        bufferedImage = ImageHelper.rotateImage(bufferedImage, 90);
                     }
-
-                    // Нашли слово? Производим обрезку!
-                    if (idx != -1)
-                        resultCopy = resultCopy.substring(idx);
-
-                    // Если не нашли искомые строки, то вставляем пустое значение.
-                    // В пративном случае получаем значение из текста.
-                    if (idx == -1) fileInfo.addFoundWord(entry.getKey(), "");
-                    else {
-                        // Получим коллекцию из слов, далее работать будем с ней.
-                        ArrayList<String> resultCol = Stream.of(resultCopy)
-                                // Указываем, что он должен быть параллельным
-                                .parallel()
-                                // Убираем из каждой строки знаки препинания и переносы строки
-                                // todo перенести спец символы, не участвующие в распозновании в настройку шаблона 1С
-                                .map(line -> line.replaceAll("[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n№\\E]", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
-                                // Каждую строку разбивваем на слова и уплощаем результат до стримма слов
-                                .flatMap(line -> Arrays.stream(line.split(" ")))
-                                // Обрезаем пробелы
-                                .map(String::trim)
-                                // Отбрасываем невалидные слова
-                                .filter(word -> !"".equals(word))
-                                // Оставляем только первые 3
-                                //.limit(3) // Пока не ограничиваем поиск 3-мя значениями...
-                                // Создаем коллекцию слов
-                                .collect(toCollection(ArrayList::new));
-
-                        // Если тип дата, то составляем значение из з-х
-                        if (entry.getKey().type == DataTypesConversion.DATE) {
-                            if (resultCol.size() > 2) {
-
-                                String dateStr;
-                                String pattern;
-                                boolean continueSearch = true;
-                                boolean successfulSearch = false;
-
-                                // todo Если нам будут попадаться даты в с разделителями "-" или "_", обработать их тут!
-
-                                // Если установлен признак searchType, то ищем дату, пока не найдём,
-                                // иначе делаем одну итерацию поиска.
-                                while (continueSearch) {
-
-                                    idxWord++;
-                                    continueSearch = searchType && resultCol.size() > idxWord + 1;
-
-                                    pattern = "dd"; // todo переделать под стригбилдер!!!
-                                    // Проверка месяца.
-                                    if (resultCol.get(idxWord).matches("\\d{2}"))
-                                        pattern += " MM";
-                                    else if (resultCol.get(idxWord).matches("[А-Яа-я]+$"))
-                                        pattern += " MMMM";
-                                    else continue;
-
-                                    // Проверка года
-                                    if (resultCol.get(idxWord+1).matches("\\d{2}"))
-                                        pattern += " yy";
-                                    else if (resultCol.get(idxWord+1).matches("\\d{4}"))
-                                        pattern += " yyyy";
-                                    else continue;
-
-
-                                    // Получим строку из 3 слов для определения даты.
-                                    dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
-
-                                    try {
-                                        // Распарсим полученную дату, затем переведем её в формат ISO 8601
-                                        Date date = new SimpleDateFormat(pattern).parse(dateStr);
-                                        fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
-                                        continueSearch = false;
-                                        successfulSearch = true;
-                                    } catch (ParseException e) {
-                                        //continue; Не получилось? Продолжаем поиски!
-                                    }
-                                }
-
-                                if (!successfulSearch)
-                                    fileInfo.addFoundWord(entry.getKey(), "");
-
-                            } else fileInfo.addFoundWord(entry.getKey(), "");
-                        } else if (resultCol.size() > 0)
-                            // поиск данных по типу пока работает только для даты и числа.
-                            if (searchType && entry.getKey().type == DataTypesConversion.DECIMAL) {
-                                while (resultCol.size() > idxWord) {
-                                    if (resultCol.get(idxWord).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
-                                        fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
-                                        break;
-                                    }
-                                    idxWord++;
-                                }
-                            } else fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
-                        else fileInfo.addFoundWord(entry.getKey(), "");
-                    }
+                } catch (TesseractException e) {
+                    if (LOGGER.isWarnEnabled())
+                        LOGGER.warn("Ошибка распознования:", e);
+                    return;
                 }
 
                 // Запишим инфо файл в очередь, для отправки в 1С.
                 filesToSend.put(fileInfo);
-
-                // Удалим индекс, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
-                if (templateRec.useFuzzySearch)
-                    LuceneSearch.deleteFieldFromIndex(fileInfo.getFilePath(), result);
 
             } catch (InterruptedException e) {
                 // Если выбрасывается исключение InterruptedException,
@@ -654,7 +542,188 @@ public class ProcessMonitor {
                 if (LOGGER.isErrorEnabled())
                     LOGGER.error("Recognizer was interrupt:", e);
             }
-//            }
+        }
+
+        private boolean foundWords(BufferedImage bufferedImage, ITesseract instance, TemplateRecognition templateRec, int idxTrySearch) throws TesseractException {
+
+            // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо)
+            int width = bufferedImage.getWidth();
+            int height = bufferedImage.getHeight();
+            String result = instance.doOCR(bufferedImage, templateRec.getAreaRecognition(width, height));
+
+            if (LOGGER.isDebugEnabled())
+                LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  распознанный текст: " + result);
+
+            // Проиндексируем текст, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
+            if (templateRec.useFuzzySearch)
+                // fileInfo.getFilePath(), путь используется как указатель поля для индекса.
+                LuceneSearch.addTextToIndex(fileInfo.getFilePath() + idxTrySearch, result);
+
+            for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
+                String resultCopy = result.toLowerCase();
+                int idx = -1; // Индекс найденной строки по шаблону
+                int idxWord = 0; // Индекс слова в массиве полученных слов
+                boolean searchType = false;
+                for (int i = 0; i < entry.getValue().size(); i++) {
+                    String st = entry.getValue().get(i);
+                    // Проверки на условия "Взять следующий за" и "Искать тип"
+                    if (st.startsWith("^getNextAfter")) { //todo подумать над названием. Взять следующий после (например) 3
+                        idx = 0; // Установим значение отличное от -1
+                        if (i == entry.getValue().size() - 1)
+                            break;
+                        if (entry.getValue().get(i + 1).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
+                            idxWord = Integer.parseInt(entry.getValue().get(i + 1));
+                            if (i + 3 < entry.getValue().size() && entry.getValue().get(i + 2).startsWith("^searchType"))
+                                searchType = true;
+                        } else if (entry.getValue().get(i + 1).startsWith("^searchType"))
+                            searchType = true;
+                        break;
+                    } else if (st.startsWith("^searchType")) {
+                        searchType = true;
+                        break;
+                    } else if (st.startsWith("^or"))
+                        continue;
+
+                    //idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
+                    // Получение индекса с использование нечеткого поиска.
+                    idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+
+                    if (LOGGER.isDebugEnabled())
+                        LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  фраза: " + st + " найдена: " + (idx != -1));
+
+                    if (idx == -1) {
+                        // Если следующее условие не "ИЛИ" то прерываем, в противном случае проверим условие "ИЛИ"
+                        if (!(i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or")))
+                            break;
+                    } else {
+                        idx = idx + st.length();//Найденный индекс + длинна найденного слова.
+                        // Если нашли слово, но следующее выражение стоит "ИЛИ", то последующее за "ИЛИ" слово - пропускаем
+                        if (i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or"))
+                            i = +2;
+                    }
+                }
+
+                // Нашли слово? Производим обрезку!
+                if (idx != -1)
+                    resultCopy = resultCopy.substring(idx);
+
+                // Если не нашли искомые строки, то вставляем пустое значение.
+                // В пративном случае получаем значение из текста.
+                if (idx == -1) fileInfo.addFoundWord(entry.getKey(), "");
+                else {
+                    // Получим коллекцию из слов, далее работать будем с ней.
+                    ArrayList<String> resultCol = Stream.of(resultCopy)
+                            // Указываем, что он должен быть параллельным
+                            .parallel()
+                            // Убираем из каждой строки знаки препинания и переносы строки
+                            // todo перенести спец символы (А также грязные символы), не участвующие в распозновании в настройку шаблона 1С
+                            .map(line -> line.replaceAll(
+                                    "[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n№\\E]|( мг )|( мр )|( ме )|( мэ )|( м )|( н )|( ы )|( и )|( а )", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
+                            // Каждую строку разбивваем на слова и уплощаем результат до стримма слов
+                            .flatMap(line -> Arrays.stream(line.split(" ")))
+                            // Обрезаем пробелы
+                            .map(String::trim)
+                            // Отбрасываем невалидные слова
+                            .filter(word -> !"".equals(word))
+                            // Оставляем только первые 3
+                            //.limit(3) // Пока не ограничиваем поиск 3-мя значениями...
+                            // Создаем коллекцию слов
+                            .collect(toCollection(ArrayList::new));
+
+                    // Если тип дата, то составляем значение из з-х
+                    if (entry.getKey().type == DataTypesConversion.DATE) {
+                        if (resultCol.size() > 2) {
+
+                            String dateStr;
+                            String pattern;
+                            boolean continueSearch = true;
+                            boolean successfulSearch = false;
+
+                            // todo Если нам будут попадаться даты в с разделителями "-" или "_", обработать их тут!
+
+                            // Если установлен признак searchType, то ищем дату, пока не найдём,
+                            // иначе делаем одну итерацию поиска.
+                            while (continueSearch) {
+
+                                idxWord++;
+                                continueSearch = searchType && resultCol.size() > idxWord + 1;
+
+                                pattern = "dd"; // todo переделать под стригбилдер!!!
+                                // Проверка дня. Если день указан одним числом и следующий месяц тоже одним числом,
+                                // значит скорее всего это ошибка распознования. Например 1 7 февраля.
+                                if (resultCol.get(idxWord-1).matches("\\d")
+                                        && resultCol.get(idxWord).matches("\\d")&& resultCol.size() > 3){
+                                    resultCol.set(idxWord-1, resultCol.get(idxWord-1) + resultCol.get(idxWord));
+
+                                    int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
+                                    for (int i = 0; i < idxOffset; i++) {
+                                        resultCol.set(idxWord + i, resultCol.get(idxWord + i + 1));
+                                    }
+                                }
+                                // Проверка месяца.
+                                if (resultCol.get(idxWord).matches("\\d{2}"))
+                                    pattern += " MM";
+                                else if (resultCol.get(idxWord).matches("[А-Яа-я]+$"))
+                                    pattern += " MMMM";
+                                else continue;
+
+                                // Проверка года
+                                if (resultCol.get(idxWord+1).matches("\\d{2}"))
+                                    pattern += " yy";
+                                else if (resultCol.get(idxWord+1).matches("\\d{4}"))
+                                    pattern += " yyyy";
+                                // Решаем распространенную проблему, когда год распознался с пробелами. Например 201 7
+                                else if (resultCol.get(idxWord+1).matches("\\d+")
+                                        && resultCol.size() > 3 && resultCol.get(idxWord+2).matches("\\d+")
+                                        && (resultCol.get(idxWord+1).length() + resultCol.get(idxWord+2).length()) == 4){
+                                    resultCol.set(idxWord+1, resultCol.get(idxWord+1) + resultCol.get(idxWord+2));
+                                    pattern += " yyyy";
+                                }
+                                else continue;
+
+
+                                // Получим строку из 3 слов для определения даты.
+                                dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
+
+                                try {
+                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601
+                                    Date date = new SimpleDateFormat(pattern).parse(dateStr);
+                                    fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
+                                    continueSearch = false;
+                                    successfulSearch = true;
+                                } catch (ParseException e) {
+                                    //continue; Не получилось? Продолжаем поиски!
+                                }
+                            }
+
+                            if (!successfulSearch)
+                                fileInfo.addFoundWord(entry.getKey(), "");
+
+                        } else fileInfo.addFoundWord(entry.getKey(), "");
+                    } else if (resultCol.size() > 0)
+                        // поиск данных по типу пока работает только для даты и числа.
+                        if (searchType && entry.getKey().type == DataTypesConversion.DECIMAL) {
+                            while (resultCol.size() > idxWord) {
+                                if (resultCol.get(idxWord).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
+                                    fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                                    break;
+                                }
+                                idxWord++;
+                            }
+                        } else fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                    else fileInfo.addFoundWord(entry.getKey(), "");
+                }
+            }
+
+//            // Запишим инфо файл в очередь, для отправки в 1С. //todo удалить
+//            filesToSend.put(fileInfo);
+
+            // Удалим индекс, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
+            if (templateRec.useFuzzySearch)
+                LuceneSearch.deleteFieldFromIndex(fileInfo.getFilePath() + idxTrySearch, result);
+
+            return !fileInfo.foundWordIsEmpty();
+
         }
 
         private int getIdxFoundWord(int idxStartsWith, String toSearch, String text, String file, boolean useFuzzySearch){

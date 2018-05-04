@@ -2,6 +2,7 @@ package root;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.Map;
 
 public class FileInfo {
 
@@ -18,6 +19,22 @@ public class FileInfo {
 
     public void addFoundWord(WantedValues key, String value){
         foundWords.put(key, value);
+    }
+
+    public boolean foundWordIsEmpty(){
+
+        boolean isEmpty = true;
+        for (Map.Entry<WantedValues, String> entry : foundWords.entrySet()){
+            if (!entry.getValue().isEmpty()){
+                isEmpty = false;
+                break;
+            }
+        }
+        return isEmpty;
+    }
+
+    public void clearFoundWord(){
+        foundWords.clear();
     }
 
     public String getFilePath(){

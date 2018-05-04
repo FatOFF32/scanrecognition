@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/scanrecognition.iml" filepath="$PROJECT_DIR$/scanrecognition.iml" />
+      <module fileurl="file://$PROJECT_DIR$/scan-recognition.iml" filepath="$PROJECT_DIR$/scan-recognition.iml" />
     </modules>
   </component>
 </project>
