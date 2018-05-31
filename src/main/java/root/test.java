@@ -12,6 +12,7 @@ import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 
+import net.sourceforge.tess4j.util.PdfUtilities;
 import org.apache.lucene.analysis.ru.RussianAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.OffsetAttribute;
@@ -39,8 +40,8 @@ import org.glassfish.jersey.logging.LoggingFeature;
 import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
+import java.net.URLDecoder;
 import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -65,7 +66,10 @@ public class test {
         // test rest сервиса
         //test.testRest();
         //test.testRest1();
-        test.testHttp();
+
+        // тест HTTP сервиса по сканам
+        //test.testHttp();
+        test.testHttp1();
 
 //        SearchRules obj1 = SearchRules.SKIP_CHAR;
 //        obj1.setValue(new Integer(10));
@@ -96,6 +100,65 @@ public class test {
 //        System.out.println(string.isEmpty());
     }
 
+    public static void testHttp1(){
+
+        ClientConfig config = new ClientConfig();
+//        config.register(new LoggingFeature(Logger.getLogger(LoggingFeature.DEFAULT_LOGGER_NAME), Level.OFF, LoggingFeature.Verbosity.HEADERS_ONLY, Integer.MAX_VALUE));
+        Client client = ClientBuilder.newClient(config);
+
+        HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal("testOData", "123456");
+        client.register(feature);
+//        WebTarget webTarget = client.target(url).path(query); // Почему то так не всегда работает.
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getListScans/11B5675EE95F89E143257FC0002461CBcvcv");
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/Документ/ПлатежноеПоручениеИсходящее/db51a06d-31a2-11e8-8295-005056bc20b2"); //Правильный
+        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/Документ/ПлатежноеПоручениеИсходящее/db51a06d-31a2-11e8-8295-чмчсмчсмсчмч"); // НЕ правильный
+
+        Invocation.Builder invocationBuilder =  webTarget.request(MediaType.MULTIPART_FORM_DATA);
+        Response response = invocationBuilder.get();
+        System.out.println(response.getStatus());
+
+        if (response.getMediaType().isCompatible(MediaType.MULTIPART_FORM_DATA_TYPE)){
+            InputStream resut = response.readEntity(InputStream.class);
+            try {
+                BufferedInputStream buffIS = new BufferedInputStream(resut);
+
+//                // Проверим на то, что файл пустой и вернём корректную ошибку
+//                buffIS.mark(0);
+//                if (buffIS.read() < 0)
+//                    return Response.status(Response.Status.BAD_REQUEST)
+//                            .entity("Переданный для преобразования файл - пустой!")
+//                            .build();
+//                else buffIS.reset();
+
+                String FileName = response.getHeaderString("Content-Disposition").replaceFirst("(?i)^.*filename=\"?([^\"]+)\"?.*$", "$1");
+                FileOutputStream filePDF = new FileOutputStream("D:\\Всякий хлам\\ТестСканов\\" + FileName);
+                BufferedOutputStream outPDF = new BufferedOutputStream(filePDF);
+
+                byte[] buffer = new byte[1024];
+                int bytesRead;
+
+                while((bytesRead = buffIS.read(buffer)) > 0) {
+                    outPDF.write(buffer, 0, bytesRead);
+                }
+
+                resut.close();
+                outPDF.flush();
+
+            } catch (IOException e) {
+
+            } finally {
+//                resut.close();
+//                outPDF.flush();
+
+            }
+        }else if (response.getMediaType().isCompatible(MediaType.TEXT_PLAIN_TYPE)){
+            String resut = response.readEntity(String.class);
+            System.out.println(resut);
+        }
+
+
+    }
+
     public static void testHttp(){
 
         ClientConfig config = new ClientConfig();
@@ -105,9 +168,10 @@ public class test {
         HttpAuthenticationFeature feature = HttpAuthenticationFeature.universal("testOData", "123456");
         client.register(feature);
 //        WebTarget webTarget = client.target(url).path(query); // Почему то так не всегда работает.
-//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getListScans/11B5675EE95F89E143257FC0002461CB");
-        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getSkan/" +
-                "51a157cb-af0c-46a8-884a-a2bc55f896d3");
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getListScans/11B5675EE95F89E143257FC0002461CBcvcv");
+        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/%D0%94%D0%BE%D0%BA%D1%83%D0%BC%D0%B5%D0%BD%D1%82/%D0%9F%D0%BB%D0%B0%D1%82%D0%B5%D0%B6%D0%BD%D0%BE%D0%B5%D0%9F%D0%BE%D1%80%D1%83%D1%87%D0%B5%D0%BD%D0%B8%D0%B5%D0%98%D1%81%D1%85%D0%BE%D0%B4%D1%8F%D1%89%D0%B5%D0%B5/db51a06d-31a2-11e8-8295-00sfdadsfasfdsa");
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getSkan/" +
+//                "51a157cb-af0c-46a8-884a-a2bc55f896d3qqqqq");
 //                "XFx2czEzLWZzYnVoXEJVSFNDXGFyY2hpdmVcUE9fT3V0XNCQ0LrQutCf0L7Qu18wMi4wMi4yMDE4IDAwMDAwXzAwMDAwMDAwMDAxXzAyLjAyLjIwMTggMTc1MDU2X9Ch0JDQndCa0KIt0J/Ql");
 //                "%5C%5Cvs13-fsbuh%5CBUHSC%5Carchive%5CPO_Out%5C%D0%90%D0%BA%D0%BA%D0%9F%D0%BE%D0%BB_02.02.2018%2000000_00000000001_02.02.2018%20175056_%D0%A1%D0%90%D0%9D%D0%9A%D0%A2-%D0%9F%D0%95%D0%A2%D0%95%D0%A0%D0%91%D0%A3%D0%A0%D0%93%2040502810490160000006%20%28%D0%9A%D0%9E%D0%9E%29_7705596339_770501001.pdf");
 //                "XFx2czEzLWZzYnVoXEJVSFNDXGFyY2hpdmVcUE9fT3V0XNCQ0LrQutCf0L7Qu18wMi4wMi4yMDE4IDAwMDAwXzAwMDAwMDAwMDAxXzAyLjAyLjIwMTggMTc1MDU2X9Ch0JDQndCa0KIt0J/QldCi0JXQoNCR0KPQoNCTIDQwNTAyODEwNDkwMTYwMDAwMDA2ICjQmtCe0J4pXzc3MDU1OTYzMzlfNzcwNTAxMDAxLnBkZg==");
@@ -115,6 +179,17 @@ public class test {
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.APPLICATION_JSON);
         Response response = invocationBuilder.get();
         System.out.println(response.getStatus());
+        String resut = response.readEntity(String.class);
+
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode rootNode = null;
+        try {
+            rootNode = mapper.readValue(resut, JsonNode.class);
+        } catch (IOException e) {
+            System.out.println(e);
+        }
+
+        System.out.println(rootNode.get("value"));
 
     }
     public static void testRest1(){

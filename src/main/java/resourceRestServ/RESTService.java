@@ -4,6 +4,7 @@ import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
 import net.sourceforge.tess4j.util.ImageIOHelper;
+import net.sourceforge.tess4j.util.LoadLibs;
 import net.sourceforge.tess4j.util.PdfUtilities;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -164,6 +165,8 @@ public class RESTService {
         ObjectNode responseObj = mapper.createObjectNode();
 
         ITesseract instance = new Tesseract();  // JNA Interface Mapping
+        File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
+        instance.setDatapath(tessDataFolder.getParent());
         instance.setLanguage("rus");
 
         File filePDF = null;

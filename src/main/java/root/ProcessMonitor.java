@@ -489,10 +489,11 @@ public class ProcessMonitor {
                     return;
                 }
 
+                // Todo Почитать, если instance потокобезопастный, то может быть сделать один на все потоки? Проверить увеличится ли скорость?
                 // Распознаем нужную область
                 ITesseract instance = new Tesseract();  // JNA Interface Mapping
-                 File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
-                 instance.setDatapath(tessDataFolder.getParent());
+                File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
+                instance.setDatapath(tessDataFolder.getParent());
                 instance.setLanguage("rus");
                 try {
                     // Преобразуем наш PDF в list IIOImage.
@@ -564,6 +565,8 @@ public class ProcessMonitor {
                 int idx = -1; // Индекс найденной строки по шаблону
                 int idxWord = 0; // Индекс слова в массиве полученных слов
                 boolean searchType = false;
+                boolean joinWords = false;
+                int idxJoinWord = 0;
                 for (int i = 0; i < entry.getValue().size(); i++) {
                     String st = entry.getValue().get(i);
                     // Проверки на условия "Взять следующий за" и "Искать тип"
@@ -584,7 +587,6 @@ public class ProcessMonitor {
                     } else if (st.startsWith("^or"))
                         continue;
 
-                    //idx = resultCopy.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
                     // Получение индекса с использование нечеткого поиска.
                     idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
 
@@ -592,6 +594,7 @@ public class ProcessMonitor {
                         LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  фраза: " + st + " найдена: " + (idx != -1));
 
                     if (idx == -1) {
+                        // todo Везде где есть проверка на условие или, добавим проверку joinWordsTo. Выделить эти проверки в отдельные методы.
                         // Если следующее условие не "ИЛИ" то прерываем, в противном случае проверим условие "ИЛИ"
                         if (!(i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or")))
                             break;
@@ -602,6 +605,17 @@ public class ProcessMonitor {
                             i = +2;
                     }
                 }
+
+//                // Условие про объединение слов в одно. Когда необходимо все слова по какое-то слово объединить.
+//                // Например, из строки "Счет-фактура № 320 012/ 15 от", мы должны получить номер "320012/15".
+//                // в условии мы должны указать, что ищем слово счет-фактура и объеденяем полученное значение по слово "от"
+//                if((i + 2 < entry.getValue().size() && entry.getValue().get(i + 1).startsWith("^joinWordsTo"))
+//                        || (i + 4 < entry.getValue().size() && entry.getValue().get(i + 1).startsWith("^getNextAfter")
+//                        && entry.getValue().get(i + 3).startsWith("^joinWordsTo"))){
+//                    if(entry.getValue().get(i + 1).startsWith("^joinWordsTo")){
+//                        // todo тут будем искать символ, и если нашли, производить обрезку
+//                    }
+//                }// todo обязательно написать описание всех этих функций с ^
 
                 // Нашли слово? Производим обрезку!
                 if (idx != -1)
