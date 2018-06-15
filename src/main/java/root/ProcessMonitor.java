@@ -54,6 +54,8 @@ public class ProcessMonitor {
     // Список шаблонов для распознования
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
     ReadWriteLock tempRecLock = new ReentrantReadWriteLock();
+    HashSet listKeyWordsSearch = new HashSet<String>(); // todo подумать, может быть использовать их для чего то в 1с?
+
     // Информацию для rest сервиса получаем из 1С todo почистить коментарии с переменными
     private static volatile String url = ""; // Инициализируем для synchronized // "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
     private static volatile String userName; // = "testOData";//"test";
@@ -91,6 +93,12 @@ public class ProcessMonitor {
         // RESTServ, рест сервис, который будет принимать настройки из 1С
         Thread restServ = new RESTServ();
         restServ.start();
+
+        // Заполним список ключевых слов поиска. Необходим для последующей обработке в коде
+        listKeyWordsSearch.add("^getNextAfter");
+        listKeyWordsSearch.add("^searchType");
+        listKeyWordsSearch.add("^joinWordsTo");
+        listKeyWordsSearch.add("^or");
 
         // MonitorDirectories будет:
         // 1. Получать настройки из 1С через REST
@@ -291,7 +299,9 @@ public class ProcessMonitor {
                         wantedWords.putIfAbsent(wv, new ArrayList<>());
 
                         List<String> list = wantedWords.get(wv);
-                        list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
+                        if (listKeyWordsSearch.contains(sStr.get("СтрокаПоиска").asText())) {
+                            list.add(sStr.get("СтрокаПоиска").asText());
+                        } else list.add(sStr.get("СтрокаПоиска").asText().toLowerCase());
                     }
 
                     // Получим и запишим в спец. объект коэффициенты расположения области в скане для распознования
@@ -562,14 +572,17 @@ public class ProcessMonitor {
 
             for (Map.Entry<WantedValues, List<String>> entry : templateRec.wantedWords.entrySet()) {
                 String resultCopy = result.toLowerCase();
+                // todo переделать все что ниже под объектную модель. (т.е. создать объект, который будет
+                // todo содержать в себе все поля (idx, idxWord и т.д.) и будет иметь функции обработки нижеописанной логики)
                 int idx = -1; // Индекс найденной строки по шаблону
                 int idxWord = 0; // Индекс слова в массиве полученных слов
                 boolean searchType = false;
-                boolean joinWords = false;
-                int idxJoinWord = 0;
-                for (int i = 0; i < entry.getValue().size(); i++) {
+                int idxJoinWord = -1;
+                int i;
+                for (i = 0; i < entry.getValue().size(); i++) {
                     String st = entry.getValue().get(i);
                     // Проверки на условия "Взять следующий за" и "Искать тип"
+                    // Предполагается что после "getNextAfter", могут быть ТОЛЬКО "searchType" ИЛИ "joinWordsTo".
                     if (st.startsWith("^getNextAfter")) { //todo подумать над названием. Взять следующий после (например) 3
                         idx = 0; // Установим значение отличное от -1
                         if (i == entry.getValue().size() - 1)
@@ -578,11 +591,23 @@ public class ProcessMonitor {
                             idxWord = Integer.parseInt(entry.getValue().get(i + 1));
                             if (i + 3 < entry.getValue().size() && entry.getValue().get(i + 2).startsWith("^searchType"))
                                 searchType = true;
-                        } else if (entry.getValue().get(i + 1).startsWith("^searchType"))
+                            else if (i + 4 < entry.getValue().size() && entry.getValue().get(i + 2).startsWith("^joinWordsTo")) //TODO затестить
+                                    idxJoinWord = getIdxFoundWord(idx, entry.getValue().get(i + 3), resultCopy,
+                                            fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+
+                        } else if (entry.getValue().get(i + 1).startsWith("^searchType")) {
                             searchType = true;
+                        } else if (i + 2 < entry.getValue().size() && entry.getValue().get(i + 1).startsWith("^joinWordsTo")) { //TODO затестить
+                            idxJoinWord = getIdxFoundWord(idx, entry.getValue().get(i + 2), resultCopy,
+                                    fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+                        }
                         break;
                     } else if (st.startsWith("^searchType")) {
                         searchType = true;
+                        break;
+                    } else if (st.startsWith("^joinWordsTo")) {
+                        idxJoinWord = getIdxFoundWord(idx, entry.getValue().get(i + 1), resultCopy,
+                                fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
                         break;
                     } else if (st.startsWith("^or"))
                         continue;
@@ -606,7 +631,7 @@ public class ProcessMonitor {
                     }
                 }
 
-//                // Условие про объединение слов в одно. Когда необходимо все слова по какое-то слово объединить.
+//                // Условие про объединение слов в одно. Когда необходимо все слова по какое-то слово объединить. (априоре последнее условие)
 //                // Например, из строки "Счет-фактура № 320 012/ 15 от", мы должны получить номер "320012/15".
 //                // в условии мы должны указать, что ищем слово счет-фактура и объеденяем полученное значение по слово "от"
 //                if((i + 2 < entry.getValue().size() && entry.getValue().get(i + 1).startsWith("^joinWordsTo"))
@@ -614,12 +639,19 @@ public class ProcessMonitor {
 //                        && entry.getValue().get(i + 3).startsWith("^joinWordsTo"))){
 //                    if(entry.getValue().get(i + 1).startsWith("^joinWordsTo")){
 //                        // todo тут будем искать символ, и если нашли, производить обрезку
+//                        //idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
 //                    }
-//                }// todo обязательно написать описание всех этих функций с ^
+//                }// todo обязательно написать описание всех этих функций с "^"
 
                 // Нашли слово? Производим обрезку!
-                if (idx != -1)
-                    resultCopy = resultCopy.substring(idx);
+                if (idx != -1) {
+                    if (idxJoinWord != -1)
+                        resultCopy = resultCopy.substring(idx, idxJoinWord);
+                    else resultCopy = resultCopy.substring(idx);
+                }
+//                if (idx != -1) // todo удалить.
+//                    resultCopy = resultCopy.substring(idx);
+
 
                 // Если не нашли искомые строки, то вставляем пустое значение.
                 // В пративном случае получаем значение из текста.
@@ -670,7 +702,7 @@ public class ProcessMonitor {
                                     resultCol.set(idxWord-1, resultCol.get(idxWord-1) + resultCol.get(idxWord));
 
                                     int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
-                                    for (int i = 0; i < idxOffset; i++) {
+                                    for (i = 0; i < idxOffset; i++) {
                                         resultCol.set(idxWord + i, resultCol.get(idxWord + i + 1));
                                     }
                                 }
@@ -694,7 +726,6 @@ public class ProcessMonitor {
                                     pattern += " yyyy";
                                 }
                                 else continue;
-
 
                                 // Получим строку из 3 слов для определения даты.
                                 dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
@@ -724,7 +755,8 @@ public class ProcessMonitor {
                                 }
                                 idxWord++;
                             }
-                        } else fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                         // todo Объединение строк пока сделаем только для типа "Строка". Допилить потом и под число. Возможно приурочить к переделке всего что выше в объектную модель.
+                        } else fileInfo.addFoundWord(entry.getKey(), resultCol, idxWord, idxJoinWord != -1);
                     else fileInfo.addFoundWord(entry.getKey(), "");
                 }
             }

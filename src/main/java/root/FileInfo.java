@@ -1,6 +1,7 @@
 package root;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -19,6 +20,20 @@ public class FileInfo {
 
     public void addFoundWord(WantedValues key, String value){
         foundWords.put(key, value);
+    }
+
+    public void addFoundWord(WantedValues key, ArrayList<String> list, int idxWord, boolean JoinWord){
+
+        if (JoinWord){
+
+            StringBuilder sb = new StringBuilder();
+            for (String word : list)
+                sb.append(word);
+            foundWords.put(key, sb.toString());
+
+        } else {
+            foundWords.put(key, list.get(idxWord));
+        }
     }
 
     public boolean foundWordIsEmpty(){
