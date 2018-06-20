@@ -55,6 +55,8 @@ public class ProcessMonitor {
     HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
     ReadWriteLock tempRecLock = new ReentrantReadWriteLock();
     HashSet listKeyWordsSearch = new HashSet<String>(); // todo подумать, может быть использовать их для чего то в 1с?
+    // Файлы в обработке
+    Set<File> filesInProcess = new HashSet<>();
 
     // Информацию для rest сервиса получаем из 1С todo почистить коментарии с переменными
     private static volatile String url = ""; // Инициализируем для synchronized // "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
@@ -260,8 +262,8 @@ public class ProcessMonitor {
 
         // Директории для мониторинга
         HashMap<File, String> directoryForMonitor = new HashMap<>();
-        // Файлы в обработке
-        Set<File> filesInProcess = new HashSet<>();
+//        // Файлы в обработке //todo delete
+//        Set<File> filesInProcess = new HashSet<>();
         // Файлы которые уже обработали, их не трогаем
         Set<File> processedFile = new HashSet<>();
         // Текущее время для автообновления настроек из 1С. Будем запрашивать обновления каждую минуту.
@@ -399,7 +401,7 @@ public class ProcessMonitor {
                 for (Map.Entry<File, String> dir : directoryForMonitor.entrySet()) {
                     if (dir.getKey().isFile()) continue;
 
-                    arrayFiles = dir.getKey().listFiles();
+                    arrayFiles = dir.getKey().listFiles(); // todo проверить что директория существует. Иначе выдается ошибка nullpointexception
                     for (File file : arrayFiles) {
 
                         if (poolExecutor.getQueue().remainingCapacity() == 0)
@@ -540,6 +542,14 @@ public class ProcessMonitor {
                     if (LOGGER.isWarnEnabled())
                         LOGGER.warn("Ошибка распознования:", e);
                     return;
+                } catch (RecognizeException e) {
+                    if (LOGGER.isDebugEnabled())
+                        LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + " " + e);
+                    // Не понятная ошибка. Иногда тессеракт возвращает пустой текст. В этому случае попробуем распознать файл другим процессом
+                    // todo Временное решение - это повторить процесс распознования. В идеале - разобраться почему так происходит.
+                    // todo Есть предположение, что это может происходить из-за того, что вр. файл "tif" или "png" был заменен другим процессом.
+                    filesInProcess.remove(fileInfo.file);
+                    return;
                 }
 
                 // Запишим инфо файл в очередь, для отправки в 1С.
@@ -555,7 +565,7 @@ public class ProcessMonitor {
             }
         }
 
-        private boolean foundWords(BufferedImage bufferedImage, ITesseract instance, TemplateRecognition templateRec, int idxTrySearch) throws TesseractException {
+        private boolean foundWords(BufferedImage bufferedImage, ITesseract instance, TemplateRecognition templateRec, int idxTrySearch) throws TesseractException, RecognizeException {
 
             // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо)
             int width = bufferedImage.getWidth();
@@ -564,6 +574,10 @@ public class ProcessMonitor {
 
             if (LOGGER.isDebugEnabled())
                 LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  распознанный текст: " + result);
+
+            // С пустым текстом не работаем... См. описание где ловится исключение.
+            if (result.isEmpty())
+                throw new RecognizeException("Распознан пустой текст!");
 
             // Проиндексируем текст, если испольщуется нечеткий поиск (templateRec.useFuzzySearch)
             if (templateRec.useFuzzySearch)
@@ -584,7 +598,7 @@ public class ProcessMonitor {
                     // Проверки на условия "Взять следующий за" и "Искать тип"
                     // Предполагается что после "getNextAfter", могут быть ТОЛЬКО "searchType" ИЛИ "joinWordsTo".
                     if (st.startsWith("^getNextAfter")) { //todo подумать над названием. Взять следующий после (например) 3
-                        idx = 0; // Установим значение отличное от -1
+                        idx = idx == -1 ? 0 : idx; // Установим значение отличное от -1
                         if (i == entry.getValue().size() - 1)
                             break;
                         if (entry.getValue().get(i + 1).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
@@ -593,13 +607,13 @@ public class ProcessMonitor {
                                 searchType = true;
                             else if (i + 4 < entry.getValue().size() && entry.getValue().get(i + 2).startsWith("^joinWordsTo")) //TODO затестить
                                     idxJoinWord = getIdxFoundWord(idx, entry.getValue().get(i + 3), resultCopy,
-                                            fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+                                            fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch, false);
 
                         } else if (entry.getValue().get(i + 1).startsWith("^searchType")) {
                             searchType = true;
                         } else if (i + 2 < entry.getValue().size() && entry.getValue().get(i + 1).startsWith("^joinWordsTo")) { //TODO затестить
                             idxJoinWord = getIdxFoundWord(idx, entry.getValue().get(i + 2), resultCopy,
-                                    fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+                                    fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch, false);
                         }
                         break;
                     } else if (st.startsWith("^searchType")) {
@@ -607,13 +621,13 @@ public class ProcessMonitor {
                         break;
                     } else if (st.startsWith("^joinWordsTo")) {
                         idxJoinWord = getIdxFoundWord(idx, entry.getValue().get(i + 1), resultCopy,
-                                fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+                                fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch, false);
                         break;
                     } else if (st.startsWith("^or"))
                         continue;
 
                     // Получение индекса с использование нечеткого поиска.
-                    idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch);
+                    idx = getIdxFoundWord(idx, st, resultCopy, fileInfo.getFilePath() + idxTrySearch, templateRec.useFuzzySearch, true);
 
                     if (LOGGER.isDebugEnabled())
                         LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + "  фраза: " + st + " найдена: " + (idx != -1));
@@ -624,7 +638,7 @@ public class ProcessMonitor {
                         if (!(i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or")))
                             break;
                     } else {
-                        idx = idx + st.length();//Найденный индекс + длинна найденного слова.
+//                        idx = idx + st.length();//Найденный индекс + длинна найденного слова. // todo delete
                         // Если нашли слово, но следующее выражение стоит "ИЛИ", то последующее за "ИЛИ" слово - пропускаем
                         if (i < entry.getValue().size() - 2 && entry.getValue().get(i + 1).startsWith("^or"))
                             i = +2;
@@ -664,7 +678,8 @@ public class ProcessMonitor {
                             // Убираем из каждой строки знаки препинания и переносы строки
                             // todo перенести спец символы (А также грязные символы), не участвующие в распозновании в настройку шаблона 1С
                             .map(line -> line.replaceAll(
-                                    "[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n№\\E]|( мг )|( мр )|( ме )|( мэ )|( м )|( н )|( ы )|( и )|( а )", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
+                                    "[\\Q!\"#$%&'()*+,.:;<=>?@[]^`{}~\n№\\E]" +
+                                            "|( мг )|( мр )|( ме )|( мэ )|( м )|( н )|( ы )|( и )|( а )|( мо )|( м9 )|( ”9 )|( „9 )", " ")) // todo остановился тут, нужно убрать знак "-" "(\\pP&&[^-])|\\n" Правильно так: [\Q!"#$%&'()*+,./:;<=>?@[\]^_`{|}~\n\E]
                             // Каждую строку разбивваем на слова и уплощаем результат до стримма слов
                             .flatMap(line -> Arrays.stream(line.split(" ")))
                             // Обрезаем пробелы
@@ -709,9 +724,17 @@ public class ProcessMonitor {
                                 // Проверка месяца.
                                 if (resultCol.get(idxWord).matches("\\d{2}"))
                                     pattern += " MM";
-                                else if (resultCol.get(idxWord).matches("[А-Яа-я]+$"))
+                                else if (resultCol.get(idxWord).matches("[А-Яа-я]+$")) {
+                                    // Решаем проблему когда месяц указан строкой, а распознался как два слова. Например ян варя
+                                    if (resultCol.get(idxWord+1).matches("[А-Яа-я]+$")){
+                                        resultCol.set(idxWord, resultCol.get(idxWord) + resultCol.get(idxWord+1));
+                                        int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
+                                        for (i = 1; i < idxOffset; i++) {
+                                            resultCol.set(idxWord + i, resultCol.get(idxWord + i + 1));
+                                        }
+                                    }
                                     pattern += " MMMM";
-                                else continue;
+                                } else continue;
 
                                 // Проверка года
                                 if (resultCol.get(idxWord+1).matches("\\d{2}"))
@@ -772,13 +795,18 @@ public class ProcessMonitor {
 
         }
 
-        private int getIdxFoundWord(int idxStartsWith, String toSearch, String text, String file, boolean useFuzzySearch){
+        // endOffset - Вернёт индекс последненго символа найденного слова
+        private int getIdxFoundWord(int idxStartsWith, String toSearch, String text, String file, boolean useFuzzySearch, boolean endOffset){
 
             int idx;
             idxStartsWith = idxStartsWith == -1 ? 0 : idxStartsWith;
             if (useFuzzySearch){
-                idx = LuceneSearch.getIdxFoundWord(toSearch, file, idxStartsWith, 10);
-            }else idx = text.indexOf(toSearch, idxStartsWith);
+                idx = LuceneSearch.getIdxFoundWord(toSearch, file, idxStartsWith, 10, endOffset);
+            } else {
+                idx = text.indexOf(toSearch, idxStartsWith);
+                if (endOffset && idx == -1)
+                    idx = idx + toSearch.length(); //Найденный индекс + длинна найденного слова.
+            }
 
             return idx;
         }

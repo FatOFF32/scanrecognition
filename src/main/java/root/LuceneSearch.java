@@ -169,7 +169,7 @@ public class LuceneSearch {
         }
     }
 
-    public static int getIdxFoundWord(final String toSearch, final String searchField, final int idxStartsWith, final int limit) {
+    public static int getIdxFoundWord(final String toSearch, final String searchField, final int idxStartsWith, final int limit, boolean endOffset) {
 
         LuceneSearch instance = LuceneSearch.getInstance();
 
@@ -211,7 +211,7 @@ public class LuceneSearch {
                 tokenStream.reset();
                 while (tokenStream.incrementToken())
                     if (highlighter.getFragmentScorer().getTokenScore() > 0 && offsetAtt.startOffset() >= idxStartsWith)
-                        return offsetAtt.startOffset();
+                        return endOffset ? offsetAtt.endOffset() : offsetAtt.startOffset();
             }
         } catch (IOException e) {
             if (LOGGER.isWarnEnabled())
