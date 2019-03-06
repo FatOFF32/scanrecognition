@@ -8,6 +8,7 @@ import com.sun.jersey.api.client.config.DefaultClientConfig;
 import com.sun.jersey.api.client.filter.HTTPBasicAuthFilter;
 import com.sun.jersey.api.client.filter.LoggingFilter;
 */
+import com.sun.deploy.net.HttpUtils;
 import net.sourceforge.tess4j.ITesseract;
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
@@ -46,6 +47,7 @@ import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -54,8 +56,8 @@ import java.util.stream.Stream;
 import static com.sun.org.apache.xml.internal.utils.DOMHelper.createDocument;
 import static java.util.stream.Collectors.toCollection;
 
-public class test {
-    public static void main(String[] args) throws ParseException, IOException, InvalidTokenOffsetsException {
+public class test implements Serializable{
+    public static void main(String[] args)  { //throws ParseException, IOException, InvalidTokenOffsetsException
 
         // попробуем распарсить нужную нам информацию...
         //testParseResult();
@@ -69,7 +71,7 @@ public class test {
 
         // тест HTTP сервиса по сканам
         //test.testHttp();
-        test.testHttp1();
+//        test.testHttp1();
 
 //        SearchRules obj1 = SearchRules.SKIP_CHAR;
 //        obj1.setValue(new Integer(10));
@@ -93,11 +95,141 @@ public class test {
 //        }finally {
 //            System.out.println("2");
 //        }
+/*
+        try{
+            System.out.println("1");
+            throw new IOException("Error");
+        }catch (IOException e) {
+            System.out.println(e);
+            throw new RuntimeException("Error 2");
+        } catch (RuntimeException e){
+            System.out.println(e);
+        }finally {
+            System.out.println("2");
+        }
+        int local = 1;
+        int root = 2;
+*/
 //
 //        System.out.println("3");
         
 //        String string = null;
 //        System.out.println(string.isEmpty());
+
+        // test random
+//        for (int i = 0; i < 50 ; i++) {
+//            int rand = new Random().nextInt();
+//            System.out.println("Random: " + rand);
+//            System.out.println("Random %5: " + rand % 5);
+//            System.out.println("Math: " + Math.random()*5);
+//        }
+//        boolean b = true|false;
+//        System.out.println(Stream.iterate("1", (s)-> s + 3).limit(3).map(x-> x+x));
+//        double d = 10;
+//        test.probe(d);
+//        List list = new ArrayList();
+////        list.stream().sorted((a, b) -> b.compareTo(a)).co
+////        Integer.parseInt("dfsdsf");
+//
+//        try {
+//            System.out.println("aaa");
+//            throw new Error("1");
+//        } catch (Error e){
+//            System.out.println("bbbb");
+//        }finally {
+//            System.out.println("cccc");
+//        }
+//
+//        System.out.println("ddddd");
+
+//        List<String> list = new ArrayList<>();
+//        list.add("1");
+//        list.add("2");
+//        list.add(3);
+        List<? super Number> list = new ArrayList<>();
+        list.add(new Integer(1));
+        list.add(2);
+//        list.add(new Object()); //err
+        Object obj = new Integer(10);
+        list.add((Number) obj);
+        HashMap<Integer, String> hm = new HashMap<>();
+        hm.put(1, "1");
+        hm.put(2, "2");
+
+        Set<Integer> set = hm.keySet();
+
+        hm.put(3, "3");
+
+        for (Integer i : set)
+            System.out.println(i);
+
+        Number num1 = new Integer(10);
+        Number num2 = new Integer(15);
+        Number num3 = num1.longValue() + num2.longValue();
+        System.out.println("num3 = " + num3);
+
+        Number num4 = 10.656;
+        Number num5 = new Double(15.111);
+        Number num6 = num4.doubleValue() + num5.doubleValue();
+        System.out.println("num4 = " + num4.doubleValue());
+        System.out.println("num5 = " + num5.doubleValue());
+        System.out.println("num4 + num5 = " + (num4.doubleValue() + num5.doubleValue()));
+        System.out.println("num4 + num5 = " + (10.656 + 15.111));
+        System.out.println("num6 = " + num6.doubleValue());
+
+        Float fl;
+        System.out.println("Double through Long: " + (double)num4.longValue());
+
+
+
+
+//        System.out.println("String".replace('g', 'G') == "String".replace('g', 'G'));
+//        System.out.println("String".replace('g', 'g') == "String");
+//        System.out.println("String".replace('g', 'G') == "StrinG");
+//        System.out.println("String".replace('g', 'g') == new String("String").replace('g', 'g'));
+
+/*
+        int i = 1, j = 10; //todo Прочиать про do как это работает.
+        do {
+            if (i++ > --j) continue;
+        }while (i<5);
+        System.out.println("i=" + i + " j= " + j);
+*/
+
+
+/*
+        ArrayList<? extends Number> list = new ArrayList<Integer>();
+        ArrayList<? extends Integer> list5 = new ArrayList<Integer>();
+        ArrayList<? super Integer> list4 = new ArrayList<Integer>();
+//        List<?> list1 = new ArrayList<?>(); //err
+        List<?> list2 = new ArrayList<Integer>();
+//        List<Number> list3 = new ArrayList<Integer>(); //err
+//        list.add(10);// err
+        list4.add(10);
+        list4.add(new Integer(10));
+//        list4.add(new Double(10)); //err
+//        list5.add(new Integer(10)); //err
+        list5.get(1).byteValue();
+//        list2.add(10); //err
+*/
+
+/*
+//        Double dou = (Double) new Integer(10); //err
+        Double dou = (Double) (Number) new Integer(10); // err в момент выполнения java.lang.ClassCastException: java.lang.Integer cannot be cast to java.lang.Double
+        Number dou1 = new Integer(10);
+//        Integer integer = dou1; //err
+        Integer integer = (Integer) dou1;
+*/
+
+
+    }
+
+    public static void probe(Number obj){
+        System.out.println("Number");
+    }
+
+    public static void probe(Object obj){
+        System.out.println("Object");
     }
 
     public static void testHttp1(){
@@ -110,8 +242,8 @@ public class test {
         client.register(feature);
 //        WebTarget webTarget = client.target(url).path(query); // Почему то так не всегда работает.
 //        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getListScans/11B5675EE95F89E143257FC0002461CBcvcv");
-//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/Документ/ПлатежноеПоручениеИсходящее/db51a06d-31a2-11e8-8295-005056bc20b2"); //Правильный
-        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/Документ/ПлатежноеПоручениеИсходящее/db51a06d-31a2-11e8-8295-чмчсмчсмсчмч"); // НЕ правильный
+        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/Документ/ПлатежноеПоручениеИсходящее/db51a06d-31a2-11e8-8295-005056bc20b2"); //Правильный
+//        WebTarget webTarget = client.target("http://10.17.1.109/upp_fatov/hs/scans/getScan/Документ/ПлатежноеПоручениеИсходящее/db51a06d-31a2-11e8-8295-чмчсмчсмсчмч"); // НЕ правильный
 
         Invocation.Builder invocationBuilder =  webTarget.request(MediaType.MULTIPART_FORM_DATA);
         Response response = invocationBuilder.get();
@@ -131,7 +263,7 @@ public class test {
 //                else buffIS.reset();
 
                 String FileName = response.getHeaderString("Content-Disposition").replaceFirst("(?i)^.*filename=\"?([^\"]+)\"?.*$", "$1");
-                FileOutputStream filePDF = new FileOutputStream("D:\\Всякий хлам\\ТестСканов\\" + FileName);
+                FileOutputStream filePDF = new FileOutputStream("D:\\Всякий хлам\\ТестСканов\\" + URLDecoder.decode(FileName, "UTF-8"));
                 BufferedOutputStream outPDF = new BufferedOutputStream(filePDF);
 
                 byte[] buffer = new byte[1024];
