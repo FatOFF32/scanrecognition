@@ -60,7 +60,7 @@
         <org.glassfish.jersey.version>2.26</org.glassfish.jersey.version>
         <org.apache.lucene>7.2.1</org.apache.lucene>
         <org.slf4j>1.7.25</org.slf4j>
-        <org.eclipse.jetty>9.4.11.v20180605</org.eclipse.jetty>
+        <org.eclipse.jetty>9.4.12.v20180830</org.eclipse.jetty>
     </properties>
 
 
