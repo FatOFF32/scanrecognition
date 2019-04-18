@@ -754,7 +754,7 @@ public class ProcessMonitor {
                                 dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
 
                                 try {
-                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601
+                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601 // TODO Переделать на LocalDateTime !!!!!
                                     Date date = new SimpleDateFormat(pattern).parse(dateStr);
                                     fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
                                     continueSearch = false;
