@@ -27,9 +27,7 @@ import javax.imageio.IIOImage;
 import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.awt.image.RenderedImage;
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
@@ -43,20 +41,19 @@ import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toCollection;
 
+// todo написать javadoc
+// todo переписать все коменты на English
+// todo написать ТЕСТЫ, подключить Mock
 public class ProcessMonitor {
 
     // todo перенести инициализацию в конструктор. У сложенных классов тоже!
 
-    // Пул потоков распознавателя, задачи для обработки
-    ThreadPoolExecutor poolExecutor = new ThreadPoolExecutor(1,1,15, TimeUnit.MINUTES, new ArrayBlockingQueue(200));
-    // Обработанные файлы, данные по которым отправляем в 1С
-    BlockingQueue<FileInfo> filesToSend = new ArrayBlockingQueue(200);
-    // Список шаблонов для распознования
-    HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
-    ReadWriteLock tempRecLock = new ReentrantReadWriteLock();
-    HashSet listKeyWordsSearch = new HashSet<String>(); // todo подумать, может быть использовать их для чего то в 1с?
-    // Файлы в обработке
-    Set<File> filesInProcess = new HashSet<>();
+    private ThreadPoolExecutor poolExecutor; // Пул потоков распознавателя, задачи для обработки
+    private BlockingQueue<FileInfo> filesToSend; // Обработанные файлы, данные по которым отправляем в 1С
+    private HashMap<String, TemplateRecognition> templatesRecognition; // Список шаблонов для распознования todo подумать, может сделать concurrent
+    private ReadWriteLock tempRecLock; // Для блокировки шаблонов в момент обновления todo подумать, может вовсе убрать
+    private HashSet<String> listKeyWordsSearch ; // todo подумать, может быть использовать их для чего то в 1с?
+    private Set<File> filesInProcess ;// Файлы в обработке
 
     // Информацию для rest сервиса получаем из 1С todo почистить коментарии с переменными
     private static volatile String url = ""; // Инициализируем для synchronized // "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
@@ -78,14 +75,25 @@ public class ProcessMonitor {
             ProcessMonitor.class.notifyAll();
     }
 
-    public ProcessMonitor(int restPort) {
+    ProcessMonitor(int restPort) {
 
         ProcessMonitor.restPort = restPort;
         initialize();
 
     }
 
-    void initialize() {
+    void start(){
+
+        poolExecutor = new ThreadPoolExecutor(1, 1, 15, TimeUnit.MINUTES, new ArrayBlockingQueue<>(200));
+        filesToSend = new ArrayBlockingQueue<>(200);
+        templatesRecognition = new HashMap<>();
+        tempRecLock = new ReentrantReadWriteLock();
+        listKeyWordsSearch = new HashSet<>(); // todo подумать, может быть использовать их для чего то в 1с?
+        filesInProcess = new HashSet<>();
+
+    }
+
+    private void initialize() {
 
         int curQuantityThreads = quantityThreads;
 
@@ -261,7 +269,7 @@ public class ProcessMonitor {
     protected class MonitorDirectories extends Thread {
 
         // Директории для мониторинга
-        HashMap<File, String> directoryForMonitor = new HashMap<>();
+        HashMap<File, String> directoryForMonitor = new HashMap<>(); //todo подумать, может сделать concurrent
 //        // Файлы в обработке //todo delete
 //        Set<File> filesInProcess = new HashSet<>();
         // Файлы которые уже обработали, их не трогаем
@@ -272,7 +280,7 @@ public class ProcessMonitor {
 
         private void writeTemplatesRecognition() {
 
-            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
+            // Подключаемся к 1С через rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
             JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
                     "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
                     "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
@@ -280,10 +288,14 @@ public class ProcessMonitor {
             if (templates == null)
                 return;
 
+            // todo если уберем очистку нащих мап, то можно и не ставить блокировку на чтение.
             // Заблокируем шаблоны на чтение, пока модифицируем данные.
             tempRecLock.writeLock().lock();
             try {
 
+//                 todo убрать очистку этих мап чтобы не плодить лишние объекты, сделать следующее:
+//                 1. провериь мапу на equals.
+//                 2. Если не равна на equals, то проверяем каждый элемент мапы. Старые пусть висят себе спокойно (подумать).
                 directoryForMonitor.clear();
                 templatesRecognition.clear();
 

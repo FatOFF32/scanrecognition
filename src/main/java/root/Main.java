@@ -6,7 +6,9 @@ public class Main {
         if (args == null || args.length == 0)
             throw new IllegalArgumentException("Порт REST сервиса автораспознователя не заполнен!");
 
-        new ProcessMonitor(Integer.parseInt(args[0]));
+        ProcessMonitor PM = new ProcessMonitor(Integer.parseInt(args[0]));
+
+        PM.start();
 
     }
 }
