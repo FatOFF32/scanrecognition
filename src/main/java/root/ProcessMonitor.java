@@ -78,7 +78,6 @@ public class ProcessMonitor {
     ProcessMonitor(int restPort) {
 
         ProcessMonitor.restPort = restPort;
-        initialize();
 
     }
 
@@ -90,6 +89,8 @@ public class ProcessMonitor {
         tempRecLock = new ReentrantReadWriteLock();
         listKeyWordsSearch = new HashSet<>(); // todo подумать, может быть использовать их для чего то в 1с?
         filesInProcess = new HashSet<>();
+
+        initialize();
 
     }
 
@@ -117,8 +118,10 @@ public class ProcessMonitor {
         Thread monitor = new MonitorDirectories();
         monitor.start();
 
-        // Мониторим потоки RESTServ и MonitorDirectories, если какой то отвалится, запускаем заново. // todo возможно переделать в поток, чтобы не вешать майн
+        // Мониторим потоки RESTServ и MonitorDirectories, если какой то отвалится, запускаем заново.
         // Также проверяем, если количество процессов изменилось, устанавливаем максимальное количество потоков пула.
+        // todo возможно переделать в поток, чтобы не вешать майн. add method "run", which will start this process
+        // todo To ask, how this statement could be changed without "While(true)"
         while (true){
             // Проверим, менялось ли количество потоков
             if (quantityThreads != curQuantityThreads) {
@@ -308,6 +311,7 @@ public class ProcessMonitor {
                     HashMap<WantedValues, List<String>> wantedWords = new HashMap<>();
                     for (JsonNode sStr : searchStrings) {
 
+                        // todo не оптимальный кусок кода! Зачем каждый раз создавать WantedValues или хер сним??? Это же POJO
                         WantedValues wv = new WantedValues(sStr.get("ИмяИскомогоЗначения").asText(),
                                 sStr.get("ТипИскомогоЗначения").asText());
                         wantedWords.putIfAbsent(wv, new ArrayList<>());
@@ -325,6 +329,7 @@ public class ProcessMonitor {
                             template.get("КоэффРазмераОбластиX").asDouble(),
                             template.get("КоэффРазмераОбластиY").asDouble());
 
+                    // todo переделать под билдер???
                     templatesRecognition.put(template.get("Ref_Key").asText(),
                             new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords,
                                     template.get("ИспользоватьНечеткийПоиск").asBoolean(), ratioRectangle));
@@ -766,7 +771,7 @@ public class ProcessMonitor {
                                 dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
 
                                 try {
-                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601
+                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601 // todo перевести в LocalDate?
                                     Date date = new SimpleDateFormat(pattern).parse(dateStr);
                                     fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
                                     continueSearch = false;
