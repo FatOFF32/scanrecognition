@@ -44,7 +44,7 @@ import static java.util.stream.Collectors.toCollection;
 // todo написать javadoc
 // todo переписать все коменты на English
 // todo написать ТЕСТЫ, подключить Mock
-public class ProcessMonitor {
+public class ProcessMonitor extends Thread{
 
     // todo перенести инициализацию в конструктор. У сложенных классов тоже!
 
@@ -75,24 +75,17 @@ public class ProcessMonitor {
             ProcessMonitor.class.notifyAll();
     }
 
-    ProcessMonitor(int restPort) {
+    public ProcessMonitor(int restPort) {
 
         ProcessMonitor.restPort = restPort;
 
     }
 
-    void start(){
-
-        poolExecutor = new ThreadPoolExecutor(1, 1, 15, TimeUnit.MINUTES, new ArrayBlockingQueue<>(200));
-        filesToSend = new ArrayBlockingQueue<>(200);
-        templatesRecognition = new HashMap<>();
-        tempRecLock = new ReentrantReadWriteLock();
-        listKeyWordsSearch = new HashSet<>(); // todo подумать, может быть использовать их для чего то в 1с?
-        filesInProcess = new HashSet<>();
-
+    @Override
+    public void run() {
         initialize();
-
     }
+
 
     private void initialize() {
 
@@ -100,6 +93,13 @@ public class ProcessMonitor {
 
         long curTime = System.currentTimeMillis();
         long updateTime = 600000; // Очищаем данные индекса lucene каждые 600 сек (10 минут).
+
+        poolExecutor = new ThreadPoolExecutor(1, 1, 15, TimeUnit.MINUTES, new ArrayBlockingQueue<>(200));
+        filesToSend = new ArrayBlockingQueue<>(200);
+        templatesRecognition = new HashMap<>();
+        tempRecLock = new ReentrantReadWriteLock();
+        listKeyWordsSearch = new HashSet<>(); // todo подумать, может быть использовать их для чего то в 1с?
+        filesInProcess = new HashSet<>();
 
         // RESTServ, рест сервис, который будет принимать настройки из 1С
         Thread restServ = new RESTServ();
@@ -118,11 +118,9 @@ public class ProcessMonitor {
         Thread monitor = new MonitorDirectories();
         monitor.start();
 
-        // Мониторим потоки RESTServ и MonitorDirectories, если какой то отвалится, запускаем заново.
+        // Мониторим потоки RESTServ и MonitorDirectories, если какой-то отвалится, запускаем заново.
         // Также проверяем, если количество процессов изменилось, устанавливаем максимальное количество потоков пула.
-        // todo возможно переделать в поток, чтобы не вешать майн. add method "run", which will start this process
-        // todo To ask, how this statement could be changed without "While(true)"
-        while (true){
+        while (!Thread.currentThread().isInterrupted()){
             // Проверим, менялось ли количество потоков
             if (quantityThreads != curQuantityThreads) {
                 if (quantityThreads < 2) {
@@ -156,9 +154,13 @@ public class ProcessMonitor {
             }
 
             // Поспим 10 секунд, затем опять проверим настройки и работоспособность потоков
-            try {
+            try { // todo может все обернуть в try-catch
                 Thread.sleep(10000);
             } catch (InterruptedException e) {
+                // Прерываем работу обслуживающих потоков
+                Thread.currentThread().interrupt();
+                restServ.interrupt();
+                monitor.interrupt();
                 if (LOGGER.isErrorEnabled())
                     LOGGER.error("Process monitor was interrupt", e);
             }
@@ -411,7 +413,7 @@ public class ProcessMonitor {
             FileInfo curFileToSend;
             while (!Thread.currentThread().isInterrupted()) {
 
-//                try {
+//                try {// todo подумать, надо ли оборачивать в try-catch
 
                 // Промониторим папки, новые файлы запишем в filesInProcess и добавим в пул задач (poolExecutor), для последующего разбора
                 File[] arrayFiles;
@@ -475,7 +477,7 @@ public class ProcessMonitor {
 //                    System.out.println("Файлы в работе:" + filesInProcess.toString()); // todo Удалить
                 }
 //                } catch (InterruptedException e) {
-//                    // Если выбрасывается исключение InterruptedException,
+//                    // Если исключение InterruptedException вызвано не методом interrupt,
 //                    // то флаг (isInterrupted()) не переводится в true. Для этого
 //                    // вручную вызывается метод interrupt() у текущего потока.
 //                    Thread.currentThread().interrupt();
