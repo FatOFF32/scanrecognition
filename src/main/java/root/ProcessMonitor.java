@@ -27,9 +27,7 @@ import javax.imageio.IIOImage;
 import javax.ws.rs.client.*;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.awt.image.RenderedImage;
 import java.io.File;
 import java.io.IOException;
 import java.text.ParseException;
@@ -43,20 +41,19 @@ import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toCollection;
 
-public class ProcessMonitor {
+// todo написать javadoc
+// todo переписать все коменты на English
+// todo написать ТЕСТЫ, подключить Mock
+public class ProcessMonitor extends Thread{
 
     // todo перенести инициализацию в конструктор. У сложенных классов тоже!
 
-    // Пул потоков распознавателя, задачи для обработки
-    ThreadPoolExecutor poolExecutor = new ThreadPoolExecutor(1,1,15, TimeUnit.MINUTES, new ArrayBlockingQueue(200));
-    // Обработанные файлы, данные по которым отправляем в 1С
-    BlockingQueue<FileInfo> filesToSend = new ArrayBlockingQueue(200);
-    // Список шаблонов для распознования
-    HashMap<String, TemplateRecognition> templatesRecognition = new HashMap<>();
-    ReadWriteLock tempRecLock = new ReentrantReadWriteLock();
-    HashSet listKeyWordsSearch = new HashSet<String>(); // todo подумать, может быть использовать их для чего то в 1с?
-    // Файлы в обработке
-    Set<File> filesInProcess = new HashSet<>();
+    private ThreadPoolExecutor poolExecutor; // Пул потоков распознавателя, задачи для обработки
+    private BlockingQueue<FileInfo> filesToSend; // Обработанные файлы, данные по которым отправляем в 1С
+    private HashMap<String, TemplateRecognition> templatesRecognition; // Список шаблонов для распознования todo подумать, может сделать concurrent
+    private ReadWriteLock tempRecLock; // Для блокировки шаблонов в момент обновления todo подумать, может вовсе убрать
+    private HashSet<String> listKeyWordsSearch ; // todo подумать, может быть использовать их для чего то в 1с?
+    private Set<File> filesInProcess ;// Файлы в обработке
 
     // Информацию для rest сервиса получаем из 1С todo почистить коментарии с переменными
     private static volatile String url = ""; // Инициализируем для synchronized // "http://localhost/BuhCORP/odata/standard.odata"; //"http://10.17.1.109/upp_fatov/odata/standard.odata";
@@ -81,16 +78,28 @@ public class ProcessMonitor {
     public ProcessMonitor(int restPort) {
 
         ProcessMonitor.restPort = restPort;
-        initialize();
 
     }
 
-    void initialize() {
+    @Override
+    public void run() {
+        initialize();
+    }
+
+
+    private void initialize() {
 
         int curQuantityThreads = quantityThreads;
 
         long curTime = System.currentTimeMillis();
         long updateTime = 600000; // Очищаем данные индекса lucene каждые 600 сек (10 минут).
+
+        poolExecutor = new ThreadPoolExecutor(1, 1, 15, TimeUnit.MINUTES, new ArrayBlockingQueue<>(200));
+        filesToSend = new ArrayBlockingQueue<>(200);
+        templatesRecognition = new HashMap<>();
+        tempRecLock = new ReentrantReadWriteLock();
+        listKeyWordsSearch = new HashSet<>(); // todo подумать, может быть использовать их для чего то в 1с?
+        filesInProcess = new HashSet<>();
 
         // RESTServ, рест сервис, который будет принимать настройки из 1С
         Thread restServ = new RESTServ();
@@ -109,9 +118,9 @@ public class ProcessMonitor {
         Thread monitor = new MonitorDirectories();
         monitor.start();
 
-        // Мониторим потоки RESTServ и MonitorDirectories, если какой то отвалится, запускаем заново. // todo возможно переделать в поток, чтобы не вешать майн
+        // Мониторим потоки RESTServ и MonitorDirectories, если какой-то отвалится, запускаем заново.
         // Также проверяем, если количество процессов изменилось, устанавливаем максимальное количество потоков пула.
-        while (true){
+        while (!Thread.currentThread().isInterrupted()){
             // Проверим, менялось ли количество потоков
             if (quantityThreads != curQuantityThreads) {
                 if (quantityThreads < 2) {
@@ -145,9 +154,13 @@ public class ProcessMonitor {
             }
 
             // Поспим 10 секунд, затем опять проверим настройки и работоспособность потоков
-            try {
+            try { // todo может все обернуть в try-catch
                 Thread.sleep(10000);
             } catch (InterruptedException e) {
+                // Прерываем работу обслуживающих потоков
+                Thread.currentThread().interrupt();
+                restServ.interrupt();
+                monitor.interrupt();
                 if (LOGGER.isErrorEnabled())
                     LOGGER.error("Process monitor was interrupt", e);
             }
@@ -261,7 +274,7 @@ public class ProcessMonitor {
     protected class MonitorDirectories extends Thread {
 
         // Директории для мониторинга
-        HashMap<File, String> directoryForMonitor = new HashMap<>();
+        HashMap<File, String> directoryForMonitor = new HashMap<>(); //todo подумать, может сделать concurrent
 //        // Файлы в обработке //todo delete
 //        Set<File> filesInProcess = new HashSet<>();
         // Файлы которые уже обработали, их не трогаем
@@ -272,7 +285,7 @@ public class ProcessMonitor {
 
         private void writeTemplatesRecognition() {
 
-            // Подключаемся к 1С чере rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
+            // Подключаемся к 1С через rest, забираем данные о папках для мониторинга и на шаблон для распознования // todo переделать под StringBuilder
             JsonNode templates = getResultQuery1C("/Catalog_со_ШаблоныАвтораспознавания?" + // Имя справочника
                     "$filter=DeletionMark%20ne%20true" + //$select=Ref_Key,КаталогПоискаСканов,СтрокиПоиска" + // выборки, фильтры (фильтры пока убрал)
                     "&$orderby=СтрокиПоиска/ИмяИскомогоЗначения,СтрокиПоиска/LineNumber%20asc"); // Сортировка
@@ -280,10 +293,14 @@ public class ProcessMonitor {
             if (templates == null)
                 return;
 
+            // todo если уберем очистку нащих мап, то можно и не ставить блокировку на чтение.
             // Заблокируем шаблоны на чтение, пока модифицируем данные.
             tempRecLock.writeLock().lock();
             try {
 
+//                 todo убрать очистку этих мап чтобы не плодить лишние объекты, сделать следующее:
+//                 1. провериь мапу на equals.
+//                 2. Если не равна на equals, то проверяем каждый элемент мапы. Старые пусть висят себе спокойно (подумать).
                 directoryForMonitor.clear();
                 templatesRecognition.clear();
 
@@ -296,6 +313,7 @@ public class ProcessMonitor {
                     HashMap<WantedValues, List<String>> wantedWords = new HashMap<>();
                     for (JsonNode sStr : searchStrings) {
 
+                        // todo не оптимальный кусок кода! Зачем каждый раз создавать WantedValues или хер сним??? Это же POJO
                         WantedValues wv = new WantedValues(sStr.get("ИмяИскомогоЗначения").asText(),
                                 sStr.get("ТипИскомогоЗначения").asText());
                         wantedWords.putIfAbsent(wv, new ArrayList<>());
@@ -313,6 +331,7 @@ public class ProcessMonitor {
                             template.get("КоэффРазмераОбластиX").asDouble(),
                             template.get("КоэффРазмераОбластиY").asDouble());
 
+                    // todo переделать под билдер???
                     templatesRecognition.put(template.get("Ref_Key").asText(),
                             new TemplateRecognition(template.get("Ref_Key").asText(), wantedWords,
                                     template.get("ИспользоватьНечеткийПоиск").asBoolean(), ratioRectangle));
@@ -394,7 +413,7 @@ public class ProcessMonitor {
             FileInfo curFileToSend;
             while (!Thread.currentThread().isInterrupted()) {
 
-//                try {
+//                try {// todo подумать, надо ли оборачивать в try-catch
 
                 // Промониторим папки, новые файлы запишем в filesInProcess и добавим в пул задач (poolExecutor), для последующего разбора
                 File[] arrayFiles;
@@ -458,7 +477,7 @@ public class ProcessMonitor {
 //                    System.out.println("Файлы в работе:" + filesInProcess.toString()); // todo Удалить
                 }
 //                } catch (InterruptedException e) {
-//                    // Если выбрасывается исключение InterruptedException,
+//                    // Если исключение InterruptedException вызвано не методом interrupt,
 //                    // то флаг (isInterrupted()) не переводится в true. Для этого
 //                    // вручную вызывается метод interrupt() у текущего потока.
 //                    Thread.currentThread().interrupt();
@@ -754,7 +773,7 @@ public class ProcessMonitor {
                                 dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
 
                                 try {
-                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601 // TODO Переделать на LocalDateTime !!!!!
+                                    // Распарсим полученную дату, затем переведем её в формат ISO 8601 // todo перевести в LocalDate?
                                     Date date = new SimpleDateFormat(pattern).parse(dateStr);
                                     fileInfo.addFoundWord(entry.getKey(), new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").format(date));
                                     continueSearch = false;

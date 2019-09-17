@@ -62,6 +62,7 @@ import java.util.stream.Stream;
 
 import static com.sun.org.apache.xml.internal.utils.DOMHelper.createDocument;
 import static java.util.stream.Collectors.toCollection;
+import static java.util.stream.Collectors.toList;
 
 public class test implements Serializable{
     public static void main(String[] args)  { //throws ParseException, IOException, InvalidTokenOffsetsException
@@ -122,6 +123,42 @@ public class test implements Serializable{
         
 //        String string = null;
 //        System.out.println(string.isEmpty());
+        HashMap <String, List<String>> hashMap1 = new HashMap<>();
+        List<String> list1 = new ArrayList<>();
+        list1.add("1");
+        list1.add("2");
+        list1.add("3");
+        list1.add("4");
+
+        List<String> list2 = new ArrayList<>();
+        list2.add("5");
+        list2.add("6");
+        list2.add("7");
+        list2.add("8");
+
+        hashMap1.put("list1", list1);
+        hashMap1.put("list2", list2);
+
+        HashMap <String, List<String>> hashMap2 = new HashMap<>();
+        List<String> list3 = new ArrayList<>();
+        list3.add("1");
+        list3.add("2");
+        list3.add("3");
+        list3.add("4");
+
+        List<String> list4 = new ArrayList<>();
+        list4.add("5");
+        list4.add("6");
+        list4.add("7");
+        list4.add("8");
+
+
+        hashMap2.put("list1", list3);
+        hashMap2.put("list2", list4);
+
+        System.out.println("Equal list? " + list1.equals(list3));
+        System.out.println("Equal? " + hashMap1.equals(hashMap2));
+
 
         // test random
 //        for (int i = 0; i < 50 ; i++) {
@@ -245,6 +282,15 @@ public class test implements Serializable{
     public static void probe(Object obj){
         System.out.println("Object");
     }
+
+//    private boolean areEqualWithArrayValue(Map<String, List<String>> first, Map<String, List<String>> second) {
+//        if (first.size() != second.size()) {
+//            return false;
+//        }
+//
+//        return first.entrySet().stream()
+//                .allMatch(e -> Arrays.equals(e.getValue(), second.get(e.getKey())));
+//    }
 
     public static void testHttp1(){
 

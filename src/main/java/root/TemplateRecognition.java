@@ -4,6 +4,7 @@ import java.awt.*;
 import java.util.HashMap;
 import java.util.List;
 
+// todo переопределить equals. Сделать его сравнимым чтобы не создавать лишних объектов. wantedWords проверяем просто на equals
 public class TemplateRecognition {
 
     String templateID;

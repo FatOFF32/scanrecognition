@@ -2,6 +2,7 @@ package root;
 
 import java.awt.*;
 
+// todo переопределить equals
 public class RatioRectangle {
     private final double ratioSpecifiedX;
     private final double ratioSpecifiedY;
