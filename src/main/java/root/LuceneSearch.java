@@ -81,7 +81,7 @@ public class LuceneSearch {
         return instance;
     }
 
-    public static void rediscoverWriter() throws IOException {
+    public static void reOpenWriter() throws IOException {
 
         LuceneSearch instance = LuceneSearch.getInstance();
 
