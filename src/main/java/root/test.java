@@ -46,6 +46,13 @@ import java.net.URLDecoder;
 import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAdjuster;
+import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
@@ -180,8 +187,8 @@ public class test implements Serializable{
         Float fl;
         System.out.println("Double through Long: " + (double)num4.longValue());
 
-
-
+        SortedSet set1 = new TreeSet();
+        LocalDate.parse("2017-12-15", DateTimeFormatter.ofPattern("yyyy-MM-dd"))
 
 //        System.out.println("String".replace('g', 'G') == "String".replace('g', 'G'));
 //        System.out.println("String".replace('g', 'g') == "String");
@@ -211,6 +218,13 @@ public class test implements Serializable{
 //        list5.add(new Integer(10)); //err
         list5.get(1).byteValue();
 //        list2.add(10); //err
+*/
+/*
+        // По сути такой же как и Object???
+        ArrayList<? super Number> list4 = new ArrayList<>();
+        list4.add(new Integer(10));
+        list4.add(new Double(10));
+        list4.get(0).
 */
 
 /*
