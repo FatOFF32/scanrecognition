@@ -225,7 +225,7 @@ public class test implements Serializable{
         System.out.println("Double through Long: " + (double)num4.longValue());
 
         SortedSet set1 = new TreeSet();
-        LocalDate.parse("2017-12-15", DateTimeFormatter.ofPattern("yyyy-MM-dd"))
+        LocalDate.parse("2017-12-15", DateTimeFormatter.ofPattern("yyyy-MM-dd"));
 
 //        System.out.println("String".replace('g', 'G') == "String".replace('g', 'G'));
 //        System.out.println("String".replace('g', 'g') == "String");
