@@ -7,13 +7,21 @@ import java.util.Map;
 
 public class FileInfo {
 
-    //TemplateRecognition templateRecognition; // решил пока не использовать ссылку на шаблон, будем использовать ИД.
-    String templateID;
-    File file;
-    HashMap<WantedValues, String> foundWords;
+    private TemplateRecognition templateRecognition;
+    //String templateID; // templateID already has in templateRecognition // todo detele!
+    private File file;
+    private HashMap<WantedValues, String> foundWords;
 
-    public FileInfo(String templateID, File file) {
-        this.templateID = templateID;
+    public File getFile() {
+        return file;
+    }
+
+    public HashMap<WantedValues, String> getFoundWords() {
+        return foundWords;
+    }
+
+    public FileInfo(TemplateRecognition templateRecognition, File file) {
+        this.templateRecognition = templateRecognition;
         this.file = file;
         this.foundWords = new HashMap<>();
     }
@@ -56,10 +64,14 @@ public class FileInfo {
         return file.getPath();
     }
 
+    public TemplateRecognition getTemplateRecognition() {
+        return templateRecognition;
+    }
+
     @Override
     public String toString() {
         return "FileInfo{" +
-                "templateID='" + templateID + '\'' +
+                "templateID='" + templateRecognition.getTemplateID() + '\'' +
                 ", file=" + file +
                 ", foundWords=" + foundWords +
                 '}';

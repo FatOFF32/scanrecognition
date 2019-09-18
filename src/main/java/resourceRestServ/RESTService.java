@@ -22,7 +22,6 @@ import java.awt.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.util.List;
-import java.util.Map;
 
 @Path("recognizer")
 public class RESTService {
@@ -51,7 +50,9 @@ public class RESTService {
                     .build();
         }
 
-        ProcessMonitor.setSettings1C(rootNode);
+        ProcessMonitor pm = ProcessMonitor.getInstance();
+        pm.setSettings1C(rootNode);
+//        MonitorDirectories.setSettings1C(rootNode); todo delete
 
         return Response.status(Response.Status.OK)
                 .entity(response)
@@ -352,6 +353,36 @@ public class RESTService {
 
         return Response.status(Response.Status.OK)
                 .entity("REST сервис автораспознавателя стартовал!")
+                .build();
+    }
+
+    @GET
+    @Path("shutdownRecognition")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_HTML)
+    public Response shutdownRecognition() {
+
+        ProcessMonitor pm = ProcessMonitor.getInstance();
+//        ProcessMonitor.shutdownRecognizer(); todo del
+
+        return Response.status(Response.Status.OK)
+                .entity(pm.shutdownRecognizer(10))
+                .build();
+    }
+
+    @GET
+    @Path("stopRecognizer")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_HTML)
+    public Response stopRecognizer() {
+
+        ProcessMonitor pm = ProcessMonitor.getInstance();
+        pm.stopRecognizer();
+
+//        ProcessMonitor.stopRecognizer(); todo del
+
+        return Response.status(Response.Status.OK)
+                .entity("Распознование прервано!")
                 .build();
     }
 

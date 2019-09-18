@@ -12,6 +12,10 @@ public class TemplateRecognition {
     RatioRectangle ratioRectangle;
     boolean useFuzzySearch;
 
+    public String getTemplateID() {
+        return templateID;
+    }
+
     TemplateRecognition(String templateID, HashMap<WantedValues, List<String>> wantedWords, boolean useFuzzySearch, RatioRectangle ratioRectangle) {
         this.templateID = templateID;
         this.wantedWords = wantedWords;
