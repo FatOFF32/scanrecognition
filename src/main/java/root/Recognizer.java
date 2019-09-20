@@ -16,23 +16,24 @@ import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.Callable;
 import java.util.stream.Stream;
 
 import static java.util.stream.Collectors.toCollection;
 
-class Recognizer implements Runnable {
+class Recognizer implements Callable<IFileInfo> {
 
-    private final FileInfo fileInfo;
+    private final IFileInfo fileInfo;
 
     // logger
     private static final Logger LOGGER = LoggerFactory.getLogger(ProcessMonitor.class);
 
-    public Recognizer(FileInfo fileInfo) {
+    public Recognizer(IFileInfo fileInfo) {
         this.fileInfo = fileInfo;
     }
 
     @Override
-    public void run() {
+    public IFileInfo call() {
 
         String result; //todo delete
         TemplateRecognition templateRec;
@@ -63,7 +64,7 @@ class Recognizer implements Runnable {
                 if (iioImages.size() == 0) {
                     if (LOGGER.isDebugEnabled())
                         LOGGER.debug("Файл пустой: " + fileInfo.getFile());
-                    return;
+                    return null;
                 }
 
                 bufferedImage = (BufferedImage)iioImages.get(0).getRenderedImage();
@@ -76,7 +77,7 @@ class Recognizer implements Runnable {
             } catch (IOException e) {
                 if (LOGGER.isWarnEnabled())
                     LOGGER.warn("Ошибка распознования:", e);
-                return;
+                return null;
             }
 
             try {
@@ -91,7 +92,7 @@ class Recognizer implements Runnable {
             } catch (TesseractException e) {
                 if (LOGGER.isWarnEnabled())
                     LOGGER.warn("Ошибка распознования:", e);
-                return;
+                return null;
             } catch (RecognizeException e) {
                 if (LOGGER.isDebugEnabled())
                     LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + " " + e);
@@ -105,6 +106,9 @@ class Recognizer implements Runnable {
             // todo $$$ Остановился тут! Переделать через callable и управлять filesInProcess и filesToSend через монитор дерикторирй.
             //  также думаю что от filesToSend можно избавиться...
             //  Просто забрасываем файл в пул, сохраняем фьючи, если распознование не получилось, опять пулим задачу.
+            //  $$$ Дописать! Подумать что он должен возвращать в случае ошибки? NULL или же что то другое.
+            //  Перепилить создание задачи, чтодбы была возможность где то сохранить задачу (в мапе например) и уже эту коллекуцию обходить.
+            //  ссылка https://javarush.ru/quests/lectures/questmultithreading.level08.lecture09
 
             // Запишим инфо файл в очередь, для отправки в 1С.
             filesToSend.put(fileInfo);
@@ -333,7 +337,8 @@ class Recognizer implements Runnable {
                             idxWord++;
                         }
                         // todo Объединение строк пока сделаем только для типа "Строка". Допилить потом и под число. Возможно приурочить к переделке всего что выше в объектную модель.
-                    } else fileInfo.addFoundWord(entry.getKey(), resultCol, idxWord, idxJoinWord != -1);
+                    } else if(idxJoinWord == -1) fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                    else fileInfo.addFoundWord(entry.getKey(), resultCol);
                 else fileInfo.addFoundWord(entry.getKey(), "");
             }
         }
