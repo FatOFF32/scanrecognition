@@ -9,6 +9,7 @@ import net.sourceforge.tess4j.util.LoadLibs;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.annotation.Nonnull;
 import javax.imageio.IIOImage;
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -32,19 +33,21 @@ class Recognizer implements Callable<IFileInfo> {
         this.fileInfo = fileInfo;
     }
 
+
     @Override
-    public IFileInfo call() {
+    public @Nonnull IFileInfo call() throws Exception {
 
         String result; //todo delete
         TemplateRecognition templateRec;
         BufferedImage bufferedImage;
+        List<IIOImage> iioImages;
 
         System.out.println(Thread.currentThread()); // TODO для теста удалить
 
-        try {
+//        try {// todo раскомментить
 
-            // Попытаемся прочитать данные из шаблона
-            templateRec = fileInfo.getTemplateRecognition();
+        // Попытаемся прочитать данные из шаблона
+        templateRec = fileInfo.getTemplateRecognition();
 
 //            if (templateRec == null) { // todo удалить, не может быть null по логиче системы
 //                if (LOGGER.isWarnEnabled())
@@ -52,22 +55,26 @@ class Recognizer implements Callable<IFileInfo> {
 //                return;
 //            }
 
-            // Todo Почитать, если instance потокобезопастный, то может быть сделать один на все потоки? Проверить увеличится ли скорость?
-            // Распознаем нужную область
-            ITesseract instance = new Tesseract();  // JNA Interface Mapping
-            File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
-            instance.setDatapath(tessDataFolder.getParent());
-            instance.setLanguage("rus");
+        // Todo Почитать, если instance потокобезопастный, то может быть сделать один на все потоки? Проверить увеличится ли скорость?
+        // Распознаем нужную область
+        ITesseract instance = new Tesseract();  // JNA Interface Mapping
+        File tessDataFolder = LoadLibs.extractTessResources("tessdata"); // Maven build only; only English data bundled
+        instance.setDatapath(tessDataFolder.getParent());
+        instance.setLanguage("rus");
+
+        // 5 attempts for recognize
+        for (int j = 0; j < 5; j++) {
+
             try {
                 // Преобразуем наш PDF в list IIOImage.
-                List<IIOImage> iioImages = ImageIOHelper.getIIOImageList(fileInfo.getFile());
+                iioImages = ImageIOHelper.getIIOImageList(fileInfo.getFile());
                 if (iioImages.size() == 0) {
                     if (LOGGER.isDebugEnabled())
                         LOGGER.debug("Файл пустой: " + fileInfo.getFile());
-                    return null;
+                    continue;
                 }
 
-                bufferedImage = (BufferedImage)iioImages.get(0).getRenderedImage();
+                bufferedImage = (BufferedImage) iioImages.get(0).getRenderedImage();
 
 //                    // Для привязки распознаем только первую страницу (Может быть сделаем настраиваемо) todo удалить
 //                    int width = iioImages.get(0).getRenderedImage().getWidth();
@@ -77,13 +84,13 @@ class Recognizer implements Callable<IFileInfo> {
             } catch (IOException e) {
                 if (LOGGER.isWarnEnabled())
                     LOGGER.warn("Ошибка распознования:", e);
-                return null;
+                continue;
             }
 
             try {
                 // Включение возможности переворачивания изображения, в слючае неудачной попытки извлечения текста
                 for (int i = 0; i < 4; i++) {
-                    if (foundWords(bufferedImage, instance, templateRec, i)){ // todo установить настройку переворачивания из шаблнона
+                    if (foundWords(bufferedImage, instance, templateRec, i)) { // todo установить настройку переворачивания из шаблнона
                         break;
                     }
                     // Если ничего не нашли, попробуем перевернуть  изображение на 90 градусов и распознать ещё раз.
@@ -92,16 +99,17 @@ class Recognizer implements Callable<IFileInfo> {
             } catch (TesseractException e) {
                 if (LOGGER.isWarnEnabled())
                     LOGGER.warn("Ошибка распознования:", e);
-                return null;
+                continue;
             } catch (RecognizeException e) {
                 if (LOGGER.isDebugEnabled())
                     LOGGER.debug(Thread.currentThread() + fileInfo.getFilePath() + " " + e);
-                // Не понятная ошибка. Иногда тессеракт возвращает пустой текст. В этому случае попробуем распознать файл другим процессом
+                // Не понятная ошибка. Иногда тессеракт возвращает пустой текст. В этому случае попробуем распознать файл ещё раз
                 // todo Временное решение - это повторить процесс распознования. В идеале - разобраться почему так происходит.
                 // todo Есть предположение, что это может происходить из-за того, что вр. файл "tif" или "png" был заменен другим процессом.
-                filesInProcess.remove(fileInfo.file);
-                return;
+                continue;
             }
+
+            break;
 
             // todo $$$ Остановился тут! Переделать через callable и управлять filesInProcess и filesToSend через монитор дерикторирй.
             //  также думаю что от filesToSend можно избавиться...
@@ -110,17 +118,21 @@ class Recognizer implements Callable<IFileInfo> {
             //  Перепилить создание задачи, чтодбы была возможность где то сохранить задачу (в мапе например) и уже эту коллекуцию обходить.
             //  ссылка https://javarush.ru/quests/lectures/questmultithreading.level08.lecture09
 
+            // todo раскомментить все что внизу
             // Запишим инфо файл в очередь, для отправки в 1С.
-            filesToSend.put(fileInfo);
-
-        } catch (InterruptedException e) {
-            // Если выбрасывается исключение InterruptedException,
-            // то флаг (isInterrupted()) не переводится в true. Для этого
-            // вручную вызывается метод interrupt() у текущего потока.
-            Thread.currentThread().interrupt();
-            if (LOGGER.isErrorEnabled())
-                LOGGER.error("Recognizer was interrupt:", e);
+//            filesToSend.put(fileInfo);
         }
+
+        return fileInfo;
+
+//        } catch (InterruptedException e) {
+//            // Если выбрасывается исключение InterruptedException,
+//            // то флаг (isInterrupted()) не переводится в true. Для этого
+//            // вручную вызывается метод interrupt() у текущего потока.
+//            Thread.currentThread().interrupt();
+//            if (LOGGER.isErrorEnabled())
+//                LOGGER.error("Recognizer was interrupt:", e);
+//        }
     }
 
     private boolean foundWords(BufferedImage bufferedImage, ITesseract instance, TemplateRecognition templateRec, int idxTrySearch) throws TesseractException, RecognizeException {
@@ -270,9 +282,9 @@ class Recognizer implements Callable<IFileInfo> {
                             pattern = "dd"; // todo переделать под стригбилдер!!!
                             // Проверка дня. Если день указан одним числом и следующий месяц тоже одним числом,
                             // значит скорее всего это ошибка распознования. Например 1 7 февраля.
-                            if (resultCol.get(idxWord-1).matches("\\d")
-                                    && resultCol.get(idxWord).matches("\\d")&& resultCol.size() > 3){
-                                resultCol.set(idxWord-1, resultCol.get(idxWord-1) + resultCol.get(idxWord));
+                            if (resultCol.get(idxWord - 1).matches("\\d")
+                                    && resultCol.get(idxWord).matches("\\d") && resultCol.size() > 3) {
+                                resultCol.set(idxWord - 1, resultCol.get(idxWord - 1) + resultCol.get(idxWord));
 
                                 int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
                                 for (i = 0; i < idxOffset; i++) {
@@ -284,8 +296,8 @@ class Recognizer implements Callable<IFileInfo> {
                                 pattern += " MM";
                             else if (resultCol.get(idxWord).matches("[А-Яа-я]+$")) {
                                 // Решаем проблему когда месяц указан строкой, а распознался как два слова. Например ян варя
-                                if (resultCol.get(idxWord+1).matches("[А-Яа-я]+$")){
-                                    resultCol.set(idxWord, resultCol.get(idxWord) + resultCol.get(idxWord+1));
+                                if (resultCol.get(idxWord + 1).matches("[А-Яа-я]+$")) {
+                                    resultCol.set(idxWord, resultCol.get(idxWord) + resultCol.get(idxWord + 1));
                                     int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
                                     for (i = 1; i < idxOffset; i++) {
                                         resultCol.set(idxWord + i, resultCol.get(idxWord + i + 1));
@@ -295,18 +307,17 @@ class Recognizer implements Callable<IFileInfo> {
                             } else continue;
 
                             // Проверка года
-                            if (resultCol.get(idxWord+1).matches("\\d{2}"))
+                            if (resultCol.get(idxWord + 1).matches("\\d{2}"))
                                 pattern += " yy";
-                            else if (resultCol.get(idxWord+1).matches("\\d{4}"))
+                            else if (resultCol.get(idxWord + 1).matches("\\d{4}"))
                                 pattern += " yyyy";
                                 // Решаем распространенную проблему, когда год распознался с пробелами. Например 201 7
-                            else if (resultCol.get(idxWord+1).matches("\\d+")
-                                    && resultCol.size() > 3 && resultCol.get(idxWord+2).matches("\\d+")
-                                    && (resultCol.get(idxWord+1).length() + resultCol.get(idxWord+2).length()) == 4){
-                                resultCol.set(idxWord+1, resultCol.get(idxWord+1) + resultCol.get(idxWord+2));
+                            else if (resultCol.get(idxWord + 1).matches("\\d+")
+                                    && resultCol.size() > 3 && resultCol.get(idxWord + 2).matches("\\d+")
+                                    && (resultCol.get(idxWord + 1).length() + resultCol.get(idxWord + 2).length()) == 4) {
+                                resultCol.set(idxWord + 1, resultCol.get(idxWord + 1) + resultCol.get(idxWord + 2));
                                 pattern += " yyyy";
-                            }
-                            else continue;
+                            } else continue;
 
                             // Получим строку из 3 слов для определения даты.
                             dateStr = String.join(" ", resultCol.subList(idxWord - 1, idxWord + 2));
@@ -337,7 +348,7 @@ class Recognizer implements Callable<IFileInfo> {
                             idxWord++;
                         }
                         // todo Объединение строк пока сделаем только для типа "Строка". Допилить потом и под число. Возможно приурочить к переделке всего что выше в объектную модель.
-                    } else if(idxJoinWord == -1) fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
+                    } else if (idxJoinWord == -1) fileInfo.addFoundWord(entry.getKey(), resultCol.get(idxWord));
                     else fileInfo.addFoundWord(entry.getKey(), resultCol);
                 else fileInfo.addFoundWord(entry.getKey(), "");
             }
@@ -355,11 +366,11 @@ class Recognizer implements Callable<IFileInfo> {
     }
 
     // endOffset - Вернёт индекс последненго символа найденного слова
-    private int getIdxFoundWord(int idxStartsWith, String toSearch, String text, String file, boolean useFuzzySearch, boolean endOffset){
+    private int getIdxFoundWord(int idxStartsWith, String toSearch, String text, String file, boolean useFuzzySearch, boolean endOffset) {
 
         int idx;
         idxStartsWith = idxStartsWith == -1 ? 0 : idxStartsWith;
-        if (useFuzzySearch){
+        if (useFuzzySearch) {
             idx = LuceneSearch.getIdxFoundWord(toSearch, file, idxStartsWith, 10, endOffset);
         } else {
             idx = text.indexOf(toSearch, idxStartsWith);
@@ -370,7 +381,7 @@ class Recognizer implements Callable<IFileInfo> {
         return idx;
     }
 
-    private boolean prepareResultString(String resultStr, Map.Entry<WantedValues, List<String>> entry){ // todo подумать, может и удалить её вовсе...
+    private boolean prepareResultString(String resultStr, Map.Entry<WantedValues, List<String>> entry) { // todo подумать, может и удалить её вовсе...
 
         int idx = -1;
         int idxWord = 0;
@@ -380,17 +391,17 @@ class Recognizer implements Callable<IFileInfo> {
             // Проверки на условия "Взять следующий за" и "Искать тип"
             if (st.startsWith("^getNextAfter")) { //todo подумать над названием
                 idx = 0; // Установим значение отличное от -1
-                if (i == entry.getValue().size()-1)
+                if (i == entry.getValue().size() - 1)
                     break;
-                if (entry.getValue().get(i+1).matches("\\d+")){ //todo затестить на корректность обработки символов и дабла
-                    idxWord = Integer.parseInt(entry.getValue().get(i+1));
-                    if (i+3 < entry.getValue().size() && entry.getValue().get(i+2).startsWith("^searchType"))
+                if (entry.getValue().get(i + 1).matches("\\d+")) { //todo затестить на корректность обработки символов и дабла
+                    idxWord = Integer.parseInt(entry.getValue().get(i + 1));
+                    if (i + 3 < entry.getValue().size() && entry.getValue().get(i + 2).startsWith("^searchType"))
                         searchType = true;
-                }else if (entry.getValue().get(i+1).startsWith("^searchType"))
+                } else if (entry.getValue().get(i + 1).startsWith("^searchType"))
                     searchType = true;
                 break;
             }
-            if (entry.getValue().get(i+1).startsWith("^searchType")){
+            if (entry.getValue().get(i + 1).startsWith("^searchType")) {
                 searchType = true;
                 break;
             }
@@ -398,7 +409,7 @@ class Recognizer implements Callable<IFileInfo> {
             idx = resultStr.indexOf(st); // Тут мы поиск заменим со стандартного на поиск по проценту совпадения (сделаем настраиваемо) https://lucene.apache.org/core/ todo
             if (idx == -1)
                 // Проверка на или
-                if (i == entry.getValue().size()-1 || !entry.getValue().get(i+1).startsWith("^or"))
+                if (i == entry.getValue().size() - 1 || !entry.getValue().get(i + 1).startsWith("^or"))
                     break;
                 else resultStr = resultStr.substring(idx + st.length());
         }

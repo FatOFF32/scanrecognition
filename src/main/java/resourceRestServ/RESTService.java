@@ -197,7 +197,7 @@ public class RESTService {
             List<IIOImage> iioImages;
 
             if (fileMetaData.getFileName().toLowerCase().endsWith(".pdf")){
-                filePDF = File.createTempFile("forConvert", FileInfo.getFileExtension(fileMetaData.getFileName())); // ".pdf"
+                filePDF = File.createTempFile("forConvert", IFileInfo.getFileExtension(fileMetaData.getFileName())); // ".pdf"
                 outPDF = new BufferedOutputStream(new FileOutputStream(filePDF));
 
                 byte[] buffer = new byte[1024];

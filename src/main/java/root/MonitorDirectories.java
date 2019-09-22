@@ -15,10 +15,7 @@ import javax.ws.rs.core.Response;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.*;
 
 public class MonitorDirectories extends Thread {
 
@@ -29,7 +26,8 @@ public class MonitorDirectories extends Thread {
     private Set<File> processedFile;// Файлы которые уже обработали, их не трогаем
     private Set<File> filesInProcess;// Файлы в обработке
     private ThreadPoolExecutor poolExecutor; // Пул потоков распознавателя, задачи для обработки
-    private BlockingQueue<FileInfo> filesToSend; // Обработанные файлы, данные по которым отправляем в 1С
+//    private BlockingQueue<IFileInfo> filesToSend; // Обработанные файлы, данные по которым отправляем в 1С todo delete
+    private List<Future<IFileInfo>> taskInProcess; // Обработанные файлы, данные по которым отправляем в 1С
     // Текущее время для автообновления настроек из 1С. Будем запрашивать обновления каждую минуту.
     private long curTime = System.currentTimeMillis();
     private long updateTime = 60000;
@@ -65,7 +63,8 @@ public class MonitorDirectories extends Thread {
         processedFile = new HashSet<>();
         filesInProcess = new HashSet<>();
         poolExecutor = new ThreadPoolExecutor(1, 1, 15, TimeUnit.MINUTES, new ArrayBlockingQueue<>(200));
-        filesToSend = new ArrayBlockingQueue<>(200);
+//        filesToSend = new ArrayBlockingQueue<>(200); //todo delete
+        taskInProcess = new LinkedList<>();
 
         // Заполним список ключевых слов поиска. Необходим для последующей обработке в коде
         listKeyWordsSearch.add("^getNextAfter");
@@ -175,9 +174,26 @@ public class MonitorDirectories extends Thread {
 
     private void sendRecognizedData() throws InterruptedException {
 
-        FileInfo curFileToSend;
-        while (filesToSend.size() > 0) {
-            curFileToSend = filesToSend.poll();
+        IFileInfo curFileToSend;
+        Future<IFileInfo> curTask;
+        Iterator<Future<IFileInfo>> iterator = taskInProcess.listIterator();
+//        while (filesToSend.size() > 0) { //todo del
+        while (iterator.hasNext()) {
+//            curFileToSend = filesToSend.poll(); // todo del
+            curTask = iterator.next();
+            if (curTask.isCancelled()) {
+                iterator.remove();
+                continue;
+            }
+            else if (curTask.isDone()) {
+                try {
+                    curFileToSend = curTask.get();
+                } catch (ExecutionException e) {
+                    e.printStackTrace(); // todo добавить запись в лог!
+                    continue;
+                }
+            } else continue;
+
 
             // Преобразуем полученные данные в JSON и отправим в 1С
             String jsonObj = "";
@@ -197,12 +213,14 @@ public class MonitorDirectories extends Thread {
                 e.printStackTrace();
             }
 
+            // Todo $$$ Остановился тут! Нужно сделать в цикле проверку соединения с 1с. Если не удалось,
+            //  то делаем несколько попыток соединения, если соединения нет, прерываем цикл.
             if (putObjectTo1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем", jsonObj)) {
                 processedFile.add(curFileToSend.getFile());
                 filesInProcess.remove(curFileToSend.getFile());
             } else if (pm.isRunning()) { // Если не удалось отправить - подождем, возможно идет обноление БД 1C
                 Thread.sleep(10000);
-                filesToSend.put(curFileToSend);
+//                filesToSend.put(curFileToSend); todo del
             }
         }
 

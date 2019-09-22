@@ -9,8 +9,10 @@ public class ProcessMonitorTest {
 
     @Before
     public void setUp() throws Exception {
-        pm = new ProcessMonitor(111);
-        pm.start();
+
+
+//        pm = new ProcessMonitor(111);
+//        pm.start();
     }
     // todo
     //  1. Выделяем потоки рест сервиса и монитор директорий в отдельный класс, передаем туда ссылку на процесс монитор.

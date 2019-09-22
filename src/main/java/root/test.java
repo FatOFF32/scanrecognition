@@ -54,8 +54,8 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjuster;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
+import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -123,6 +123,53 @@ public class test implements Serializable{
         
 //        String string = null;
 //        System.out.println(string.isEmpty());
+
+//        for (int j = 0; j < 5; j++) {
+//            System.out.println("aaaa");
+//        }
+
+        List<String> list0 = new ArrayList<>(); //LinkedList
+        list0.add("1");
+        list0.add("2");
+        list0.add("3");
+        list0.add("4");
+
+        Iterator<String> iterator = list0.iterator();
+//        for (int i = 0; i < 2; i++) {
+////            iterator.next();
+//            System.out.println("Remove now: " + iterator.next());
+//            iterator.remove();
+//        }
+        while (iterator.hasNext()) {
+//            iterator.next();
+            System.out.println("Remove now: " + iterator.next());
+            iterator.remove();
+        }
+
+        System.out.println("Size list0: " + list0.size());
+        list0.forEach(s -> System.out.println("Rest in list: " + s));
+
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+        Future<String> task = executor.submit(new Callable<String>() {
+            @Override
+            public String call() throws Exception {
+                throw new Exception("bla bla bla");
+//                return null;
+            }
+        });
+
+        try {
+            System.out.println("result: " + task.get(1, TimeUnit.SECONDS));
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } catch (ExecutionException e) {
+            e.printStackTrace();
+        } catch (TimeoutException e) {
+            e.printStackTrace();
+        }
+        System.out.println("isDone: " + task.isDone());
+        System.out.println("isCancelled: " + task.isCancelled());
+
         HashMap <String, List<String>> hashMap1 = new HashMap<>();
         List<String> list1 = new ArrayList<>();
         list1.add("1");
