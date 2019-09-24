@@ -124,9 +124,12 @@ public class test implements Serializable{
 //        String string = null;
 //        System.out.println(string.isEmpty());
 
-//        for (int j = 0; j < 5; j++) {
-//            System.out.println("aaaa");
-//        }
+        int j;
+        for (j = 0; j < 5; j++) {
+            System.out.println("j = " + j);
+        }
+        System.out.println("j = " + j);
+
 
         List<String> list0 = new ArrayList<>(); //LinkedList
         list0.add("1");

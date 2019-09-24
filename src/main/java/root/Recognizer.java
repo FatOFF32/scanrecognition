@@ -111,7 +111,7 @@ class Recognizer implements Callable<IFileInfo> {
 
             break;
 
-            // todo $$$ Остановился тут! Переделать через callable и управлять filesInProcess и filesToSend через монитор дерикторирй.
+            // todo $$$ --- Остановился тут! Переделать через callable и управлять filesInProcess и filesToSend через монитор дерикторирй.
             //  также думаю что от filesToSend можно избавиться...
             //  Просто забрасываем файл в пул, сохраняем фьючи, если распознование не получилось, опять пулим задачу.
             //  $$$ Дописать! Подумать что он должен возвращать в случае ошибки? NULL или же что то другое.
@@ -286,7 +286,7 @@ class Recognizer implements Callable<IFileInfo> {
                                     && resultCol.get(idxWord).matches("\\d") && resultCol.size() > 3) {
                                 resultCol.set(idxWord - 1, resultCol.get(idxWord - 1) + resultCol.get(idxWord));
 
-                                int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
+                                int idxOffset = Math.min(resultCol.size(), 10);
                                 for (i = 0; i < idxOffset; i++) {
                                     resultCol.set(idxWord + i, resultCol.get(idxWord + i + 1));
                                 }
@@ -298,7 +298,7 @@ class Recognizer implements Callable<IFileInfo> {
                                 // Решаем проблему когда месяц указан строкой, а распознался как два слова. Например ян варя
                                 if (resultCol.get(idxWord + 1).matches("[А-Яа-я]+$")) {
                                     resultCol.set(idxWord, resultCol.get(idxWord) + resultCol.get(idxWord + 1));
-                                    int idxOffset = resultCol.size() < 10 ? resultCol.size() : 10;
+                                    int idxOffset = Math.min(resultCol.size(), 10);
                                     for (i = 1; i < idxOffset; i++) {
                                         resultCol.set(idxWord + i, resultCol.get(idxWord + i + 1));
                                     }

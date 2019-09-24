@@ -27,7 +27,7 @@ public class MonitorDirectories extends Thread {
     private Set<File> filesInProcess;// Файлы в обработке
     private ThreadPoolExecutor poolExecutor; // Пул потоков распознавателя, задачи для обработки
 //    private BlockingQueue<IFileInfo> filesToSend; // Обработанные файлы, данные по которым отправляем в 1С todo delete
-    private List<Future<IFileInfo>> taskInProcess; // Обработанные файлы, данные по которым отправляем в 1С
+    private List<Future<IFileInfo>> taskInProcess; // Задачи в работе. По ним получаем результат и отправляем его в 1С
     // Текущее время для автообновления настроек из 1С. Будем запрашивать обновления каждую минуту.
     private long curTime = System.currentTimeMillis();
     private long updateTime = 60000;
@@ -177,6 +177,7 @@ public class MonitorDirectories extends Thread {
         IFileInfo curFileToSend;
         Future<IFileInfo> curTask;
         Iterator<Future<IFileInfo>> iterator = taskInProcess.listIterator();
+        boolean dataBaseIsAvailable;
 //        while (filesToSend.size() > 0) { //todo del
         while (iterator.hasNext()) {
 //            curFileToSend = filesToSend.poll(); // todo del
@@ -213,15 +214,25 @@ public class MonitorDirectories extends Thread {
                 e.printStackTrace();
             }
 
-            // Todo $$$ Остановился тут! Нужно сделать в цикле проверку соединения с 1с. Если не удалось,
+            // Todo --- $$$ Остановился тут! Нужно сделать в цикле проверку соединения с 1с. Если не удалось,
             //  то делаем несколько попыток соединения, если соединения нет, прерываем цикл.
-            if (putObjectTo1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем", jsonObj)) {
-                processedFile.add(curFileToSend.getFile());
-                filesInProcess.remove(curFileToSend.getFile());
-            } else if (pm.isRunning()) { // Если не удалось отправить - подождем, возможно идет обноление БД 1C
-                Thread.sleep(10000);
+            // If connection with 1S isn't successful, we'll wait 10 second and try again. There will be 5 attempt.
+           dataBaseIsAvailable = false;
+            for (int i = 0; i < 5; i++) {
+                if (putObjectTo1C("/InformationRegister_со_ОбработанныеСканыАвтораспознавателем", jsonObj)) {
+                    processedFile.add(curFileToSend.getFile());
+                    filesInProcess.remove(curFileToSend.getFile());
+                    iterator.remove();
+                    dataBaseIsAvailable = true;
+                    break;
+                } else if (pm.isRunning()) { // Если не удалось отправить - подождем, возможно идет обноление БД 1C
+                    Thread.sleep(10000);
 //                filesToSend.put(curFileToSend); todo del
+                }
             }
+
+            if (!dataBaseIsAvailable) break;
+
         }
 
     }
@@ -357,7 +368,7 @@ public class MonitorDirectories extends Thread {
 
                         if (!filesInProcess.contains(file) && !processedFile.contains(file)) {
                             filesInProcess.add(file);
-                            poolExecutor.submit(new Recognizer(new FileInfo(templatesRecognition.get(dir.getValue()), file)));
+                            taskInProcess.add(poolExecutor.submit(new Recognizer(new FileInfo(templatesRecognition.get(dir.getValue()), file))));
                         }
                     }
                 }
