@@ -385,6 +385,7 @@ public class MonitorDirectories extends Thread {
 //                    System.out.println("Файлы в работе:" + filesInProcess.toString()); // todo Удалить
                 }
             }
+            // todo $$$!!! Наверное не тут надо ловить интерапт, а где то в цикле. Иначе он в цикл не вернётся, так ведь? ПОДУМАТЬ, ЗАТЕСТИТЬ!
         } catch (InterruptedException e) {
             // Если исключение InterruptedException вызвано не методом interrupt,
             // то флаг (isInterrupted()) не переводится в true. Для этого
